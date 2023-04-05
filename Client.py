@@ -9,6 +9,14 @@ UPDATE_INTERVAL = 60
 ACK_TIMEOUT = 5
 MSG_SIZE = 1024
 
+DEFAULT = {
+    'wfang':{
+        'address': ('weikes-mbp.dhcp.nd.edu', 1232),
+        'status': 'online',
+        'last_update': time.time()
+    }
+}
+
 # Helper functions
 def save_chat_history(username, chat_history):
     # Implement saving chat history to username-chat.json
@@ -35,7 +43,7 @@ def load_friends(username):
         with open(username + '.json', 'r') as f:
             friends = json.load(f)
     except FileNotFoundError:
-        friends = {}
+        friends = DEFAULT
     return friends
 def save_friends(username, friends):
     # Implement saving friends to a file username.json
@@ -201,6 +209,31 @@ class P2PClient:
     ### Interactions with Friends ###
 
     # receive a message (data) from a friend (conn)
+    def connect_to_friend(self, username):
+        if username not in self.friends:
+            print("Error: you are not friends with this user")
+            return
+        if self.friends[username]['status'] == 'offline':
+            print("Error: this user is offline")
+            return
+        addr = self.friends[username]['address']
+        self.friendconn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        retry_counter = 0
+        success = False
+        while True:
+            try:
+                host, port = addr
+                self.friendconn.connect((host, port))
+                success = True
+            except:
+                print("Connection error: cannot connect to friend. Retry in {} seconds".format(2**retry_counter))
+                time.sleep(2**retry_counter)
+                retry_counter += 1
+                continue
+            if success:
+                print("Connected to host: {} and port: {}".format(host, port))
+                break
+
     def handle_friend_request(self, conn, data):
         # Implement handling friend request from a peer
         response = json.loads(data)
@@ -259,20 +292,98 @@ class P2PClient:
             except Exception as e:
                 print(f"Error sending friend request: {str(e)}")
 
-
-    ### Skeleton Code (May not be used) ###
     def disconnect(self):
         # Implement disconnecting and updating the name server and friends
-        pass
+        self.go_offline()
+        for friend_username in self.friends:
+            self.send_msg_to_friend(friend_username, "Goodbye!")
+        self.friendconn.close()
+
     def send_msg_to_friend(self, friend_username, msg):
         # Implement sending a message to a friend and handling acknowledgement
-        pass
-    def handle_incoming_msg(self, conn, addr, data):
+        if friend_username not in self.friends:
+            print(f"{friend_username} is not your friend.")
+            return
+        friend_info = self.friends[friend_username]
+        friend_host, friend_port = friend_info["address"]
+        friend_online = (friend_info["status"] == "online") # True or False
+        if not friend_online:
+            print(f"{friend_username} is not online.")
+            return
+        
+        if self.friendconn is None:
+            self.connect_to_friend(friend_username)
+        try:
+            request = {
+                'type': 'message',
+                'username': self.username,
+                'message': msg,
+            }
+            message, length = self._process_response(request)
+            self.friendconn.send(length + message)
+            response = receive_response(self.friendconn)
+            if not response:
+                return
+            if response["status"] == "success":
+                print(f"Message sent to {friend_username}.")
+            else:
+                print(f"Message failed to send to {friend_username}.")
+        except Exception as e:
+            print(f"Error sending message to {friend_username}: {str(e)}")
+
+    def handle_incoming_msg(self, conn, data):
         # Implement handling incoming messages and sending acknowledgements
-        pass
+        response = json.loads(data)
+        if response['type'] == 'message':
+            friend_username = response['username']
+            msg = response['message']
+            print(f"{friend_username}: {msg}")
+            message = {"status": "success"}
+            message, length = self._process_response(message)
+            conn.sendall(length + message)
+            print(f"Message sent to {friend_username}.")
+
     def handle_client(self, conn, addr):
         # Implement handling client connections and incoming messages
-        pass
+        print("Connected by", addr)
+        data = receive_response(conn)
+        if not data:
+            return
+        response = json.loads(data)
+        if response['type'] == 'friend_request':
+            self.handle_friend_request(conn, data)
+        elif response['type'] == 'message':
+            if response["username"] != self.friend_username:
+                return
+            else:
+                self.handle_incoming_msg(conn, data)
+        else:
+            print("Unknown request type.")
+
     def start_server(self):
         # Implement starting the server to listen for incoming connections
-        pass
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.bind((self.host, self.port))
+            s.listen()
+            port = s.getsockname()[1]
+            print("Listening on port " + str(port))
+            self.port = port
+            while True:
+                conn, addr = s.accept()
+                with conn:
+                    self.handle_client(conn, addr)
+
+
+
+if __name__ == "__main__":
+    # Get user's information
+    username = input("Enter your username: ")
+    port = int(input("Enter your port number: "))
+    host = socket.gethostname()
+    print("Your host is " + host + "Your port is " + str(port) + ". Your username is " + username + ".")
+    # Initialize the P2P client
+    p2p_client = P2PClient(username, host, port)
+    # Start the server
+    p2p_client.start_server()
+    p2p_client.connect_to_friend("wfang")
+    p2p_client.send_msg_to_friend("wfang", "Hello!")
