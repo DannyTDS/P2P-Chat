@@ -1,11 +1,13 @@
 import socket
 import time
 import os
-from select import select
+import json
 
 
 CKPT = 'catalog.ckpt'
 LOG = 'catalog.log'
+
+MSG_SIZE = 1024
 
 
 class Catalog:
@@ -16,7 +18,7 @@ class Catalog:
     def add(self, name, address, status):
         # Add a new user to the catalog or update an existing user's information
         self.catalog[name] = {
-            'address': address,
+            'address': ':'.join(address),
             'status': status,
             'last_update': time.time(),
         }
@@ -25,9 +27,9 @@ class Catalog:
         return self.catalog[name]
     
     def update_stale(self):
-        # Update status of stale users to 'offline' if they haven't been updated in 60 seconds
+        # Update status of stale users to 'offline' if they haven't been updated in 120 seconds
         for name, user in self.catalog.items():
-            if time.time() - user['last_update'] > 60:
+            if time.time() - user['last_update'] > 120:
                 user['status'] = 'offline'
 
 
@@ -82,11 +84,12 @@ class NameServer:
         self.log = open(LOG, 'a')
 
         # initialize socket
-        self.host = host if host else socket.gethostname()
-        self.port = port
+        host = host if host else socket.gethostname()
         self.s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.s.bind(('', self.port))
+        self.s.bind((host, port))
         self.s.listen(5)
+        self.host, self.port = self.s.getsockname()
+        print("Name server listening on {}:{}".format(self.host, self.port))
 
     def __del__(self):
         self.log.close()
@@ -95,8 +98,42 @@ class NameServer:
     def run(self):
         while True:
             client, address = self.s.accept()
+            client.settimeout(10.0)
             print("Connection from {}:{}".format(address[0], address[1]))
             # TODO: perform operation (register or lookup)
+            try:
+                sz = client.recv(8)
+                if not sz:
+                    # connection closed by client
+                    raise ConnectionAbortedError("Connection closed by client")
+                length = int.from_bytes(sz, "big")
+                msg = b''
+                while len(msg) < length:
+                    to_read = length - len(msg)
+                    msg += client.recv(MSG_SIZE if to_read > MSG_SIZE else to_read)
+            except:
+                client.close()
+                continue
+            # Operate on the message
+            msg = json.loads(msg.decode())
+            if msg['op'] == 'register':
+                # register a new user or update an existing user's information
+                host, port = msg['address'].split(':')
+                print("Registered user {} at {}:{} as {}".format(msg['name'], host, port, msg['status']))
+                self.catalog.add(msg['name'], (host, port), msg['status'])
+                self.log.write(' '.join([msg['name'], msg['address'], msg['status']])+'\n')
+                self.log.flush()
+                os.sync()
+                self.log_length += 1
+            elif msg['op'] == 'lookup':
+                # lookup a user's information
+                try:
+                    user = self.catalog.lookup(msg['name'])
+                    client.send(json.dumps(user).encode())
+                except KeyError:
+                    client.send(json.dumps({'status': 'offline'}).encode())
+            else:
+                client.send(json.dumps({'status': 'error'}).encode())
             # TODO: handle multiple clients concurrently
             # TODO: update stale users record
             client.close()
