@@ -10,11 +10,17 @@ ACK_TIMEOUT = 5
 MSG_SIZE = 1024
 
 DEFAULT = {
-    'wfang':{
-        'address': ('weikes-mbp.dhcp.nd.edu', 1232),
+    'weike':{
+        'address': ('student11.cse.nd.edu', 1234),
+        'status': 'online',
+        'last_update': time.time()
+    },
+    "danny":{
+        'address': ('student11.cse.nd.edu', 1235),
         'status': 'online',
         'last_update': time.time()
     }
+
 }
 
 # Helper functions
@@ -87,8 +93,12 @@ class P2PClient:
         self.nameserverconn = False
         self.friendconn = False
     def __del__(self):
-        self.nameserverconn.close()
-        self.friendconn.close()
+        if not isinstance(self.nameserverconn, bool):
+           self.nameserverconn.close()
+        if not isinstance(self.friendconn, bool):
+           self.friendconn.close()
+
+
     # process a dictionary response and
     # return encoded message and length
     def _process_response(self, response):
@@ -233,6 +243,7 @@ class P2PClient:
             if success:
                 print("Connected to host: {} and port: {}".format(host, port))
                 break
+        return self.friendconn
 
     def handle_friend_request(self, conn, data):
         # Implement handling friend request from a peer
@@ -281,6 +292,7 @@ class P2PClient:
                 message, length = self._process_response(request)
                 s.send(length + message)
                 response = receive_response(s)
+                response = json.loads(response)
                 if not response:
                     return
                 if response["status"] == "success":
@@ -311,7 +323,7 @@ class P2PClient:
             print(f"{friend_username} is not online.")
             return
         
-        if self.friendconn is None:
+        if not self.friendconn:
             self.connect_to_friend(friend_username)
         try:
             request = {
@@ -322,10 +334,13 @@ class P2PClient:
             message, length = self._process_response(request)
             self.friendconn.send(length + message)
             response = receive_response(self.friendconn)
+            response = json.loads(response)
+            #print("response: ", response, "type: ", type(response))
             if not response:
                 return
             if response["status"] == "success":
-                print(f"Message sent to {friend_username}.")
+                #print(f"Message sent to {friend_username}.")
+                pass
             else:
                 print(f"Message failed to send to {friend_username}.")
         except Exception as e:
@@ -341,22 +356,27 @@ class P2PClient:
             message = {"status": "success"}
             message, length = self._process_response(message)
             conn.sendall(length + message)
-            print(f"Message sent to {friend_username}.")
+            return friend_username
+            #print(f"Message sent to {friend_username}.")
 
-    def handle_client(self, conn, addr):
+    def handle_client(self, conn, addr=None):
         # Implement handling client connections and incoming messages
-        print("Connected by", addr)
+        #print("Connected by", addr)
         data = receive_response(conn)
         if not data:
             return
         response = json.loads(data)
+        if not isinstance(response, dict) or 'type' not in response:
+            return 
         if response['type'] == 'friend_request':
             self.handle_friend_request(conn, data)
         elif response['type'] == 'message':
-            if response["username"] != self.friend_username:
-                return
-            else:
-                self.handle_incoming_msg(conn, data)
+            # if response["username"] not in self.friends:
+            #     return
+            # else:
+            #     
+            friend_username = self.handle_incoming_msg(conn, data)
+            return friend_username
         else:
             print("Unknown request type.")
 
@@ -371,19 +391,12 @@ class P2PClient:
             while True:
                 conn, addr = s.accept()
                 with conn:
-                    self.handle_client(conn, addr)
+                    while True:
+                        friend_username = self.handle_client(conn, addr)
+                        self.friendconn = conn
+                        msg = input("> ")
+                        #message = {"type":"message", "username":self.username, "message":msg}
+                        #msg, length = self._process_response(message)
+                        self.send_msg_to_friend(friend_username, msg)
+                        #conn.send(length + msg)
 
-
-
-if __name__ == "__main__":
-    # Get user's information
-    username = input("Enter your username: ")
-    port = int(input("Enter your port number: "))
-    host = socket.gethostname()
-    print("Your host is " + host + "Your port is " + str(port) + ". Your username is " + username + ".")
-    # Initialize the P2P client
-    p2p_client = P2PClient(username, host, port)
-    # Start the server
-    p2p_client.start_server()
-    p2p_client.connect_to_friend("wfang")
-    p2p_client.send_msg_to_friend("wfang", "Hello!")
