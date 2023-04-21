@@ -2,6 +2,7 @@ import socket
 import time
 import os
 import json
+from select import select
 
 # path to checkpoint and log files
 CKPT = 'catalog.ckpt'
@@ -20,10 +21,11 @@ class Catalog:
         # Add a new user to the catalog or update an existing user's information
         # address is a tuple of (host, port)
         self._catalog[name] = {
-            'address': ':'.join(address),
+            'address': address,
             'status': status,
             'last_update': time.time(),
         }
+        print("Registered user {} at {} as {}".format(name, address, status))
 
     def lookup(self, name):
         # Lookup a user's information
@@ -37,9 +39,13 @@ class Catalog:
     def update_stale(self):
         # Update status of stale users to 'offline' if they haven't been updated in 120 seconds
         ts = time.time()
+        updated = []
         for name, user in self._catalog.items():
-            if ts - user['last_update'] > 120.0:
+            if ts - user['last_update'] > 120.0 and user['status'] == 'online':
                 self._catalog[name]["status"] = 'offline'
+                print("Updated user {} as offline".format(name))
+                updated.append((name, user['address'], user['status']))
+        return updated
 
 
 
@@ -79,6 +85,10 @@ class Checkpoint:
             catalog.add(name, address, status)
         return catalog, ts
 
+
+
+class Log:
+    pass
 
 
 class NameServer:
@@ -144,7 +154,21 @@ class NameServer:
         self.s.close()
 
     def run(self):
+        self.last_update_stale = time.time()
         while True:
+            # Update stale users every 120 seconds
+            if time.time() - self.last_update_stale > 120.0:
+                updated = self.catalog.update_stale()
+                self.last_update_stale = time.time()
+                # Update log
+                for user_info in updated:
+                    self.log.write(' '.join(user_info)+'\n')
+                    self.log.flush()
+                    os.sync()
+            # Check for new connections
+            readable, _, _ = select([self.s], [], [], 0.0)
+            if not readable:
+                continue
             client, address = self.s.accept()
             client.settimeout(10.0)
             print("Connection from {}:{}".format(address[0], address[1]))
@@ -165,9 +189,7 @@ class NameServer:
             msg = json.loads(msg.decode())
             if msg['op'] == 'register':
                 # register a new user or update an existing user's information
-                host, port = msg['address'].split(':')
-                print("Registered user {} at {}:{} as {}".format(msg['name'], host, port, msg['status']))
-                self.catalog.add(msg['name'], (host, port), msg['status'])
+                self.catalog.add(msg['name'], msg['address'], msg['status'])
                 self.log.write(' '.join([msg['name'], msg['address'], msg['status']])+'\n')
                 self.log.flush()
                 os.sync()
@@ -184,7 +206,6 @@ class NameServer:
             res = json.dumps(res).encode()
             sz = len(res).to_bytes(8, "big")
             client.send(sz + res)
-            # TODO: update stale users record
             client.close()
 
 

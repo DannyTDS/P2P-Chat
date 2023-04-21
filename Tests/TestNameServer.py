@@ -67,14 +67,16 @@ def main():
     assert(not user3)
     print("Failed to find user3")
 
+    print("All tests passed!")
+
 
 if __name__ == '__main__':
     main()
 
 
-friends = {
-    'user1': {
-        'address': '129.168.0.0:1234',
-        'status': 'online',
-    },
-}
+# friends = {
+#     'user1': {
+#         'address': '129.168.0.0:1234',
+#         'status': 'online',
+#     },
+# }
