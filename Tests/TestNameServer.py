@@ -3,40 +3,69 @@ import sys
 import json
 
 
+class Client:
+    def __init__(self, server_addr):
+        server_host, server_port = server_addr.split(':')
+        server_port = int(server_port)
+        self.server_addr = (server_host, server_port)
+    
+    def __del__(self):
+        self.socket.close()
+    
+    def new_socket(self):
+        self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.socket.connect(self.server_addr)
+    
+    def recv(self):
+        sz = self.socket.recv(8)
+        length = int.from_bytes(sz, "big")
+        msg = b''
+        while len(msg) < length:
+            to_read = length - len(msg)
+            msg += self.socket.recv(1024 if to_read > 1024 else to_read)
+        return json.loads(msg.decode())
+
+    def register(self, name, status='online') -> bool:
+        self.new_socket()
+        msg = {'op': 'register', 'name': name, 'address': ':'.join([str(x) for x in self.socket.getsockname()]), 'status': status}
+        self.socket.send(len(json.dumps(msg)).to_bytes(8, 'big') + json.dumps(msg).encode())
+        res = self.recv()
+        return res['status'] == 'ok'
+    
+    def lookup(self, name):
+        self.new_socket()
+        msg = {'op': 'lookup', 'name': name}
+        self.socket.send(len(json.dumps(msg)).to_bytes(8, 'big') + json.dumps(msg).encode())
+        res = self.recv()
+        return res if res['status'] != 'error' else None
+
+
 def main():
     try:
-        server_host = sys.argv[1]
-        server_port = int(sys.argv[2])
+        server_addr= sys.argv[1]
+        if ':' not in server_addr:
+            raise IndexError
     except IndexError:
-        print("Usage: python3 TestNameServer.py <server_host> <server_port>")
+        print("Usage: python3 TestNameServer.py '<server_host>:<server_port>'")
         sys.exit(1)
-    s1, s2 = socket.socket(socket.AF_INET, socket.SOCK_STREAM), socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    s1.bind(('localhost', 0))
-    s2.bind(('localhost', 0))
-    s1.connect((server_host, server_port))
-    s2.connect((server_host, server_port))
+    
+    c1, c2 = Client(server_addr), Client(server_addr)
 
     print("S1 registering...")
-    msg = {'op': 'register', 'name': 'user1', 'address': ':'.join([str(x) for x in s1.getsockname()]), 'status': 'online'}
-    s1.sendall(len(json.dumps(msg)).to_bytes(8, 'big') + json.dumps(msg).encode())
+    assert(c1.register('user1'))
     print("S2 registering...")
-    msg = {'op': 'register', 'name': 'user2', 'address': ':'.join([str(x) for x in s2.getsockname()]), 'status': 'online'}
-    s2.sendall(len(json.dumps(msg)).to_bytes(8, 'big') + json.dumps(msg).encode())
+    assert(c2.register('user2'))
 
     print("S1 looking up user2...")
-    msg = {'op': 'lookup', 'name': 'user2'}
-    s1.sendall(len(json.dumps(msg)).to_bytes(8, 'big') + json.dumps(msg).encode())
-    res = json.loads(s1.recv(1024).decode())
-    addr = res['address'].split(':')
+    user2 = c1.lookup('user2')
+    assert(user2)
+    addr = user2['address'].split(':')
     print("User2 is at {}:{}".format(addr[0], addr[1]))
 
     print("S1 looking up user3 (doesn't exist)...")
-    msg = {'op': 'lookup', 'name': 'user3'}
-    s1.sendall(len(json.dumps(msg)).to_bytes(8, 'big') + json.dumps(msg).encode())
-    print("S1 received: {}".format(json.loads(s1.recv(1024).decode())))
-
-    s1.close()
-    s2.close()
+    user3 = c1.lookup('user3')
+    assert(not user3)
+    print("Failed to find user3")
 
 
 if __name__ == '__main__':
