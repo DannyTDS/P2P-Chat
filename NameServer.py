@@ -3,34 +3,82 @@ import time
 import os
 import json
 
-
+# path to checkpoint and log files
 CKPT = 'catalog.ckpt'
 LOG = 'catalog.log'
 
+# maximum message size to reach each time in bytes
 MSG_SIZE = 1024
 
 
 class Catalog:
-    '''Catalog of registered users.'''
+    '''Catalog of registered users. Implemented as a dictionary of dictionaries.'''
     def __init__(self):
-        self.catalog = {}
+        self._catalog = dict()
 
     def add(self, name, address, status):
         # Add a new user to the catalog or update an existing user's information
-        self.catalog[name] = {
+        # address is a tuple of (host, port)
+        self._catalog[name] = {
             'address': ':'.join(address),
             'status': status,
             'last_update': time.time(),
         }
 
     def lookup(self, name):
-        return self.catalog[name]
+        # Lookup a user's information
+        # return the user's dictionary, or None if not found
+        return self._catalog.get(name, None)
+    
+    def items(self):
+        # Return an iterator of (name, user) pairs
+        return self._catalog.items()
     
     def update_stale(self):
         # Update status of stale users to 'offline' if they haven't been updated in 120 seconds
-        for name, user in self.catalog.items():
-            if time.time() - user['last_update'] > 120:
-                user['status'] = 'offline'
+        ts = time.time()
+        for name, user in self._catalog.items():
+            if ts - user['last_update'] > 120.0:
+                self._catalog[name]["status"] = 'offline'
+
+
+
+class Checkpoint:
+    '''FIXME not bug free yet'''
+    '''Checkpoint class for periodically saving catalog to disk.'''
+    def __init__(self, path):
+        self.path = path
+        try:
+            self.ckpt = open(self.path, 'r')
+        except FileNotFoundError:
+            self.ckpt = open(self.path, 'w')
+            self.ckpt.write(str('0.0')+'\n')
+            self.ckpt.flush()
+    
+    def __del__(self):
+        self.ckpt.close()
+
+    def save(self, catalog: Catalog):
+        # Save catalog to disk by shadowing
+        self.ckpt.close()
+        with open(self.path+'.tmp', 'w') as f:
+            f.write(str(time.time())+'\n')
+            for name, user in catalog.items():
+                f.write(' '.join([name, user['address'], user['status']])+'\n')
+            f.flush()
+        os.sync()
+        os.rename(self.path+'.tmp', self.path)
+        self.ckpt = open(self.path, 'r')
+    
+    def load(self):
+        # Load catalog from disk
+        catalog = Catalog()
+        ts = float(self.ckpt.readline().strip())
+        for line in self.ckpt.read().splitlines():
+            name, address, status = line.split()
+            catalog.add(name, address, status)
+        return catalog, ts
+
 
 
 class NameServer:
@@ -100,7 +148,6 @@ class NameServer:
             client, address = self.s.accept()
             client.settimeout(10.0)
             print("Connection from {}:{}".format(address[0], address[1]))
-            # TODO: perform operation (register or lookup)
             try:
                 sz = client.recv(8)
                 if not sz:
@@ -125,16 +172,18 @@ class NameServer:
                 self.log.flush()
                 os.sync()
                 self.log_length += 1
+                # TODO: periodically save catalog to disk
+                res = {'status': 'ok'}
             elif msg['op'] == 'lookup':
                 # lookup a user's information
-                try:
-                    user = self.catalog.lookup(msg['name'])
-                    client.send(json.dumps(user).encode())
-                except KeyError:
-                    client.send(json.dumps({'status': 'offline'}).encode())
+                user = self.catalog.lookup(msg['name'])
+                res = user if user else {'status': 'error'}
             else:
-                client.send(json.dumps({'status': 'error'}).encode())
-            # TODO: handle multiple clients concurrently
+                res = {'status': 'error'}
+            # Send response
+            res = json.dumps(res).encode()
+            sz = len(res).to_bytes(8, "big")
+            client.send(sz + res)
             # TODO: update stale users record
             client.close()
 
