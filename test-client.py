@@ -15,8 +15,17 @@ if __name__ == "__main__":
         if command == "quit" or command == "exit":
             print("Exiting commandline...")
             break
+        elif command == "online":
+            p2p_client.connect_to_name_server()
+            p2p_client.go_online()
+        elif command == "offline":
+            p2p_client.go_offline()
         elif command == "listen": # open to chat
             p2p_client.start_server()
+        elif command.split()[0] == "lookup":
+            username = command.split()[1]
+            res = p2p_client.lookup(username)
+            print(res)
         elif command.split()[0] == "connect": #connect to friend
             username = command.split()[1]
             conn = p2p_client.connect_to_friend(username)
