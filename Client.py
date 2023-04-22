@@ -3,6 +3,7 @@
 import socket
 import json
 import time
+from protocols import *
 
 NAMESERVER = ("catalog.cse.nd.edu", 9097)
 UPDATE_INTERVAL = 60
@@ -42,6 +43,7 @@ def load_chat_history(username):
     except FileNotFoundError:
         chat_history = {}
     return chat_history
+
 def load_friends(username):
     # Implement loading friends from a file username.json
     # load it into a dictionary
@@ -92,6 +94,7 @@ class P2PClient:
         self.nameserver = nameserver # (host, port)
         self.nameserverconn = False
         self.friendconn = False
+
     def __del__(self):
         if not isinstance(self.nameserverconn, bool):
            self.nameserverconn.close()
@@ -123,7 +126,8 @@ class P2PClient:
                 self.nameserverconn.close()
                 self.connect_to_name_server()
                 retry_counter += 1
-                continue   
+                continue
+
     def connect_to_name_server(self):
         # Implement connection to the name server
         self.nameserverconn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -142,6 +146,7 @@ class P2PClient:
             if success:
                 print("Connected to host: {} and port: {}".format(self.host, self.port))
                 break
+    
     def update_friend_info(self):
         # Implement updating friend info from the name server
         retry_counter = 0
@@ -158,10 +163,11 @@ class P2PClient:
                 data = receive_response(self.nameserverconn)
             friend_info = json.loads(data)
             self.friends[friend] = friend_info # {'address': addr, 'status': status, 'last_update': last_update}
+    
     def go_online(self):
         # Implement going online and updating the name server
-        message = {'type': 'online', 'username': self.username, 'address': (self.host, self.port)}
-        message, length = self._process_response(message)
+        package = NSPackage('register', self.username, (self.host, self.port), 'online')
+        message, length = self._process_response(package.to_dict())
         self._send_response_to_server(message, length)
         data = receive_response(self.nameserverconn)
         retry_counter = 0
@@ -171,15 +177,16 @@ class P2PClient:
             self._send_response_to_server(message, length)
             data = receive_response(self.nameserverconn)
         response = json.loads(data)
-        if response['status'] == 'success':
+        if response['status'] == 'ok':
             self.online = True
             print("Successfully go online")
         else:
             print("Error: cannot go online")
+    
     def go_offline(self):
         # Implement going offline and updating the name server
-        message = {'type': 'offline', 'username': self.username, 'address': (self.host, self.port)}
-        message, length = self._process_response(message)
+        package = NSPackage('register', self.username, (self.host, self.port), 'offline')
+        message, length = self._process_response(package.to_dict())
         self._send_response_to_server(message, length)
         data = receive_response(self.nameserverconn)
         retry_counter = 0
@@ -189,14 +196,16 @@ class P2PClient:
             self._send_response_to_server(message, length)
             data = receive_response(self.nameserverconn)
         response = json.loads(data)
-        if response['status'] == 'success':
+        if response['status'] == 'ok':
             self.online = False
             print("Successfully go offline")
         else:
             print("Error: cannot go offline")
+
     def lookup(self, username):
         # Implement looking up a peer from name server
-        message = {'type': 'lookup', 'username': username}
+        package = NSPackage('lookup', username)
+        message, length = self._process_response(package.to_dict())
         message, length = self._process_response(message)
         self._send_response_to_server(message, length)
         data = receive_response(self.nameserverconn)
@@ -213,8 +222,6 @@ class P2PClient:
         else:
             print("Error: cannot lookup")
             return None
-
-
 
     ### Interactions with Friends ###
 

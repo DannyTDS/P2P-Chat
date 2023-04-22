@@ -23,7 +23,7 @@ class TestClient:
 
     def register(self, name, status='online') -> bool:
         s = self.new_socket()
-        msg = {'op': 'register', 'name': name, 'address': ':'.join([str(x) for x in s.getsockname()]), 'status': status}
+        msg = {'op': 'register', 'name': name, 'address': (str(x) for x in s.getsockname()), 'status': status}
         s.send(len(json.dumps(msg)).to_bytes(8, 'big') + json.dumps(msg).encode())
         res = self.recv(s)
         s.close()
