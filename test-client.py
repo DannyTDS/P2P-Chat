@@ -15,9 +15,9 @@ if __name__ == "__main__":
         if command == "quit" or command == "exit":
             print("Exiting commandline...")
             break
-        elif command == "listen":
+        elif command == "listen": # open to chat
             p2p_client.start_server()
-        elif command.split()[0] == "connect":
+        elif command.split()[0] == "connect": #connect to friend
             username = command.split()[1]
             conn = p2p_client.connect_to_friend(username)
             while True:
@@ -27,6 +27,12 @@ if __name__ == "__main__":
                     break
                 p2p_client.send_msg_to_friend(username, msg)
                 p2p_client.handle_client(conn)
+        elif command == "list": # list friends
+            p2p_client.list_friends()
+        elif command.split()[0] == "add": # add friend
+            friend_username = command.split()[1]
+            #addr = p2p_client.lookup(username)
+            p2p_client.send_friend_request(friend_username)
         else:
             print("Invalid command. Please try again.")
     # conn = p2p_client.connect_to_friend("weike")

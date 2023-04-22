@@ -8,14 +8,16 @@ if __name__ == "__main__":
     print("Your host is " + host + "Your port is " + str(port) + ". Your username is " + username + ".")
     # Initialize the P2P client
     p2p_client = P2PClient(username, host, port)
+    # Start the server
+    #p2p_client.start_server()
     while True:
         command = input(">")
         if command == "quit" or command == "exit":
             print("Exiting commandline...")
             break
-        elif command == "listen":
+        elif command == "listen": # open to chat
             p2p_client.start_server()
-        elif command.split()[0] == "connect":
+        elif command.split()[0] == "connect": #connect to friend
             username = command.split()[1]
             conn = p2p_client.connect_to_friend(username)
             while True:
@@ -25,9 +27,16 @@ if __name__ == "__main__":
                     break
                 p2p_client.send_msg_to_friend(username, msg)
                 p2p_client.handle_client(conn)
+        elif command == "list": # list friends
+            p2p_client.list_friends()
+        elif command.split()[0] == "add": # add friend
+            friend_username = command.split()[1]
+            #addr = p2p_client.lookup(username)
+            p2p_client.send_friend_request(friend_username)
         else:
             print("Invalid command. Please try again.")
-    # Start the server
-    #p2p_client.start_server()
-    #p2p_client.connect_to_friend("wfang")
-    #p2p_client.send_msg_to_friend("wfang", "Hello!")
+    # conn = p2p_client.connect_to_friend("weike")
+    # while True:
+    #     msg = input("> ")
+    #     p2p_client.send_msg_to_friend("weike", msg)
+    #     p2p_client.handle_client(conn)

@@ -100,6 +100,12 @@ class P2PClient:
            self.nameserverconn.close()
         if not isinstance(self.friendconn, bool):
            self.friendconn.close()
+    
+    def list_friends(self):
+        # Implement listing friends
+        # Return a list of friends
+        for friend in self.friends:
+            print(friend["username"] + " " + friend["status"])
 
 
     # process a dictionary response and
@@ -136,7 +142,7 @@ class P2PClient:
         while True:
             try:
                 host, port = self.nameserver
-                self.client_socket.connect((host, port))
+                self.nameserverconn.connect((host, port))
                 success = True
             except:
                 print("Connection error: cannot connect to nameserver. Retry in {} seconds".format(2**retry_counter))
@@ -153,8 +159,8 @@ class P2PClient:
         for friend in self.friends:
             raw = {'type': 'lookup', 'username': friend}
             message, length = self._process_response(raw)
-            self._send_response(message, length)
-            data = self._receive_response()
+            self._send_response_to_server(message, length)
+            data = receive_response(self.nameserverconn)
             while not data:
                 time.sleep(2**retry_counter)
                 print("Receive error: cannot receive message from nameserver on update_friend. Retry in {} seconds".format(2**retry_counter))
