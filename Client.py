@@ -212,7 +212,6 @@ class P2PClient:
         # Implement looking up a peer from name server
         package = NSPackage('lookup', username)
         message, length = self._process_response(package.to_dict())
-        message, length = self._process_response(message)
         self._send_response_to_server(message, length)
         data = receive_response(self.nameserverconn)
         retry_counter = 0

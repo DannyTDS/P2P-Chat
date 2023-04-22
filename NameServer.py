@@ -113,6 +113,7 @@ class Log:
 
     def append(self, name, address, status) -> int:
         # append a new record to log file
+        address = ' '.join(map(str, address))
         self.log.write(' '.join([name, address, status])+'\n')
         self.log.flush()
         os.sync()
