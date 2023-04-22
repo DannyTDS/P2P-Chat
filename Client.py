@@ -400,15 +400,26 @@ class P2PClient:
             port = s.getsockname()[1]
             print("Listening on port " + str(port))
             self.port = port
+            s.settimeout(5)
             while True:
-                conn, addr = s.accept()
+                try:
+                    conn, addr = s.accept()
+                    print('Connection established:', addr)
+                except socket.timeout:
+                    print('Timeout occurred. No connection made.')
                 with conn:
+                    flag = False
                     while True:
                         friend_username = self.handle_client(conn, addr)
                         self.friendconn = conn
                         msg = input("> ")
                         #message = {"type":"message", "username":self.username, "message":msg}
                         #msg, length = self._process_response(message)
+                        if msg.split()[0] == "exit" or msg.split()[0] == "break":
+                            flag = True
+                            break
                         self.send_msg_to_friend(friend_username, msg)
                         #conn.send(length + msg)
+                    if flag:
+                        break
 

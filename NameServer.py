@@ -62,6 +62,8 @@ class Checkpoint:
         with open(self.path+'.tmp', 'w') as f:
             f.write(str(ts)+'\n')
             for name, user in catalog.items():
+                if isinstance(user['address'], list) or isinstance(user['address'], tuple):
+                    user['address'] = ' '.join(map(str, user['address']))
                 f.write(' '.join([name, user['address'], user['status']])+'\n')
             f.flush()
         os.sync()
