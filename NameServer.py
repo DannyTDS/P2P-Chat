@@ -3,7 +3,7 @@ import time
 import os
 import json
 from select import select
-from udp import UDPPackage
+from protocols import UDPPackage
 
 # path to checkpoint and log files
 CKPT = 'catalog.ckpt'
@@ -193,23 +193,26 @@ class NameServer:
                 client.close()
                 continue
             # Operate on the message
-            msg = json.loads(msg.decode())
-            if msg['op'] == 'register':
-                # register a new user or update an existing user's information
-                self.catalog.add(msg['name'], msg['address'], msg['status'])
-                # Update log
-                log_length = self.log.append(msg['name'], msg['address'], msg['status'])
-                if log_length > MAX_LOGS:
-                    # Update checkpoint
-                    save_ts = time.time()
-                    self.ckpt.save(self.catalog, save_ts)
-                    self.log.truncate(save_ts)
-                res = {'status': 'ok'}
-            elif msg['op'] == 'lookup':
-                # lookup a user's information
-                user = self.catalog.lookup(msg['name'])
-                res = user if user else {'status': 'error'}
-            else:
+            try:
+                msg = json.loads(msg.decode())
+                if msg['op'] == 'register':
+                    # register a new user or update an existing user's information
+                    self.catalog.add(msg['username'], msg['address'], msg['status'])
+                    # Update log
+                    log_length = self.log.append(msg['username'], msg['address'], msg['status'])
+                    if log_length > MAX_LOGS:
+                        # Update checkpoint
+                        save_ts = time.time()
+                        self.ckpt.save(self.catalog, save_ts)
+                        self.log.truncate(save_ts)
+                    res = {'status': 'ok'}
+                elif msg['op'] == 'lookup':
+                    # lookup a user's information
+                    user = self.catalog.lookup(msg['username'])
+                    res = user if user else {'status': 'error'}
+                else:
+                    raise ValueError("Unrecognized operation")
+            except ValueError:
                 res = {'status': 'error'}
             # Send response
             res = json.dumps(res).encode()
