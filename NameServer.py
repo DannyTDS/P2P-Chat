@@ -7,6 +7,8 @@ from select import select
 # path to checkpoint and log files
 CKPT = 'catalog.ckpt'
 LOG = 'catalog.log'
+# maximum number of logs before checkpoint
+MAX_LOGS = 10
 
 # maximum message size to reach each time in bytes
 MSG_SIZE = 1024
@@ -17,7 +19,7 @@ class Catalog:
     def __init__(self):
         self._catalog = dict()
 
-    def add(self, name, address, status):
+    def add(self, name, address, status, verbose=True):
         # Add a new user to the catalog or update an existing user's information
         # address is a tuple of (host, port)
         self._catalog[name] = {
@@ -25,7 +27,8 @@ class Catalog:
             'status': status,
             'last_update': time.time(),
         }
-        print("Registered user {} at {} as {}".format(name, address, status))
+        if verbose:
+            print("Registered user {} at {} as {}".format(name, address, status))
 
     def lookup(self, name):
         # Lookup a user's information
@@ -36,59 +39,94 @@ class Catalog:
         # Return an iterator of (name, user) pairs
         return self._catalog.items()
     
-    def update_stale(self):
+    def update_stale(self, verbose=True):
         # Update status of stale users to 'offline' if they haven't been updated in 120 seconds
         ts = time.time()
         updated = []
         for name, user in self._catalog.items():
             if ts - user['last_update'] > 120.0 and user['status'] == 'online':
                 self._catalog[name]["status"] = 'offline'
-                print("Updated user {} as offline".format(name))
+                if verbose:
+                    print("Updated stale user {} as offline".format(name))
                 updated.append((name, user['address'], user['status']))
         return updated
 
-
-
 class Checkpoint:
-    '''FIXME not bug free yet'''
     '''Checkpoint class for periodically saving catalog to disk.'''
     def __init__(self, path):
         self.path = path
-        try:
-            self.ckpt = open(self.path, 'r')
-        except FileNotFoundError:
-            self.ckpt = open(self.path, 'w')
-            self.ckpt.write(str('0.0')+'\n')
-            self.ckpt.flush()
-    
-    def __del__(self):
-        self.ckpt.close()
 
-    def save(self, catalog: Catalog):
+    def save(self, catalog: Catalog, ts: float):
         # Save catalog to disk by shadowing
-        self.ckpt.close()
         with open(self.path+'.tmp', 'w') as f:
-            f.write(str(time.time())+'\n')
+            f.write(str(ts)+'\n')
             for name, user in catalog.items():
                 f.write(' '.join([name, user['address'], user['status']])+'\n')
             f.flush()
         os.sync()
         os.rename(self.path+'.tmp', self.path)
-        self.ckpt = open(self.path, 'r')
     
     def load(self):
-        # Load catalog from disk
+        # Load catalog from disk, returns a catalog object and timestamp
         catalog = Catalog()
-        ts = float(self.ckpt.readline().strip())
-        for line in self.ckpt.read().splitlines():
-            name, address, status = line.split()
-            catalog.add(name, address, status)
+        try:
+            with open(self.path, 'r') as f:
+                ts = float(f.readline().strip())
+                for line in f.read().splitlines():
+                    name, address, status = line.split()
+                    catalog.add(name, address, status, verbose=False)
+        except FileNotFoundError:
+            ts = 0.0
         return catalog, ts
 
-
-
 class Log:
-    pass
+    '''Log class for recording updates'''
+    def __init__(self, path):
+        self.path = path
+        try:
+            self.log = open(self.path, 'r+')
+        except FileNotFoundError:
+            self.log = open(self.path, 'w+')
+            self.log.write('0.0\n')
+        self.length = 0
+    
+    def playback(self, catalog: Catalog, ckpt_ts: float):
+        # playback log file, update catalog, and skip incomplete logs
+        # if log is stale, truncate it and return the original catalog
+        # else, return new catalog updated with log
+        log_ts = float(self.log.readline().strip())
+        if log_ts < ckpt_ts:
+            # log is stale, truncate it
+            self.truncate(ckpt_ts)
+            return catalog
+        else:
+            for line in self.log.read().splitlines():
+                try:
+                    name, address, status = line.split()
+                    catalog.add(name, address, status, verbose=False)
+                    self.length += 1
+                except ValueError:
+                    # invalid record, skip it
+                    continue
+            return catalog
+
+    def append(self, name, address, status) -> int:
+        # append a new record to log file
+        self.log.write(' '.join([name, address, status])+'\n')
+        self.log.flush()
+        os.sync()
+        self.length += 1
+        return self.length
+
+    def truncate(self, ts):
+        # truncate log file
+        self.log.truncate(0)
+        self.log.seek(0)
+        # write current timestamp
+        self.log.write(str(ts)+'\n')
+        self.log.flush()
+        os.sync()
+        self.length = 0
 
 
 class NameServer:
@@ -97,49 +135,17 @@ class NameServer:
         # Initialize catalog from checkpoint file and playback log
         self.catalog = Catalog()
         # Read checkpoint file
-        try:
-            with open(CKPT, 'r') as f:
-                self.ckpt_ts = float(f.readline().strip())
-                for line in f.read().splitlines():
-                    name, address, status = line.split()
-                    self.catalog.add(name, address, status)
-        except FileNotFoundError:
-            self.ckpt_ts = 0.0
+        self.ckpt = Checkpoint(CKPT)
+        self.catalog, self.ckpt_ts = self.ckpt.load()
         # Read log file
-        write_new_log = False
-        valid_records = []
-        log_ts = self.ckpt_ts
-        self.log_length = 0
-        try:
-            with open(LOG, 'r') as f:
-                log_ts = float(f.readline().strip())
-                if log_ts > self.ckpt_ts:
-                    for line in f.read().splitlines():
-                        try:
-                            name, address, status = line.split()
-                            valid_records.append((name, address, status))
-                            self.log_length += 1
-                        except ValueError:
-                            # invalid record, skip it
-                            continue
-                        self.catalog.add(name, address, status)
-                else:
-                    # log is stale, overwrite it
-                    log_ts = self.ckpt_ts
-                    write_new_log = True
-        except FileNotFoundError:
-            # log file doesn't exist, create it
-            write_new_log = True
-        if write_new_log:
-            with open(LOG+'.tmp', 'w') as f:
-                f.write(str(log_ts)+'\n')
-                for name, address, status in valid_records:
-                    f.write(' '.join([name, address, status])+'\n')
-                f.flush()
-            os.sync()
-            os.rename(LOG+'.tmp', LOG)
-        # Keep the log open for appending
-        self.log = open(LOG, 'a')
+        self.log = Log(LOG)
+        self.catalog = self.log.playback(self.catalog, self.ckpt_ts)
+
+        # # TODO send UDP broadcast to known online users in the catalog
+        # broadcast = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        # broadcast.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+        # broadcast.sendto(b'hello', ('<broadcast>', 0))
+        # broadcast.close()
 
         # initialize socket
         host = host if host else socket.gethostname()
@@ -150,7 +156,6 @@ class NameServer:
         print("Name server listening on {}:{}".format(self.host, self.port))
 
     def __del__(self):
-        self.log.close()
         self.s.close()
 
     def run(self):
@@ -162,9 +167,7 @@ class NameServer:
                 self.last_update_stale = time.time()
                 # Update log
                 for user_info in updated:
-                    self.log.write(' '.join(user_info)+'\n')
-                    self.log.flush()
-                    os.sync()
+                    self.log.append(*user_info)
             # Check for new connections
             readable, _, _ = select([self.s], [], [], 0.0)
             if not readable:
@@ -190,11 +193,13 @@ class NameServer:
             if msg['op'] == 'register':
                 # register a new user or update an existing user's information
                 self.catalog.add(msg['name'], msg['address'], msg['status'])
-                self.log.write(' '.join([msg['name'], msg['address'], msg['status']])+'\n')
-                self.log.flush()
-                os.sync()
-                self.log_length += 1
-                # TODO: periodically save catalog to disk
+                # Update log
+                log_length = self.log.append(msg['name'], msg['address'], msg['status'])
+                if log_length > MAX_LOGS:
+                    # Update checkpoint
+                    save_ts = time.time()
+                    self.ckpt.save(self.catalog, save_ts)
+                    self.log.truncate(save_ts)
                 res = {'status': 'ok'}
             elif msg['op'] == 'lookup':
                 # lookup a user's information
