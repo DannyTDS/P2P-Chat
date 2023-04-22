@@ -3,6 +3,7 @@ import time
 import os
 import json
 from select import select
+from udp import UDPPackage
 
 # path to checkpoint and log files
 CKPT = 'catalog.ckpt'
@@ -141,12 +142,6 @@ class NameServer:
         self.log = Log(LOG)
         self.catalog = self.log.playback(self.catalog, self.ckpt_ts)
 
-        # # TODO send UDP broadcast to known online users in the catalog
-        # broadcast = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        # broadcast.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-        # broadcast.sendto(b'hello', ('<broadcast>', 0))
-        # broadcast.close()
-
         # initialize socket
         host = host if host else socket.gethostname()
         self.s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -154,6 +149,15 @@ class NameServer:
         self.s.listen(5)
         self.host, self.port = self.s.getsockname()
         print("Name server listening on {}:{}".format(self.host, self.port))
+
+        # send UDP broadcast to known online users in the catalog
+        broadcast = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        package = UDPPackage('NAMESERVER', self.host, self.port, 'address update')
+        for name, user in self.catalog.items():
+            if user['status'] == 'online':
+                ip_addr, port = user['address']
+                broadcast.sendto(str(package).encode(), (ip_addr, port))
+        broadcast.close()
 
     def __del__(self):
         self.s.close()
