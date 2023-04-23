@@ -81,17 +81,18 @@ def receive_response(conn):
 
 
 # Send UDP
-def send_udp(topic, from_host, from_port, to_host, to_port, content=None):
+def send_udp(topic, from_host, from_port, to_host, to_port, content=None, name = None):
     udp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     udp_sock.settimeout(10.0)
     message = {
-            'senderName': 'NAMESERVER',
             'senderHost': from_host,
             'senderPort': from_port,
             'topic': topic,
         }
     if content:
         message['content'] = content
+    if name:
+        message['senderName'] = name
     message = json.dumps(message).encode()
     udp_sock.sendto(message, (to_host, to_port))
     # wait for response
@@ -180,7 +181,7 @@ class P2PClient:
                 retry_counter += 1
                 continue
             if success:
-                print("Connected to host: {} and port: {}".format(self.host, self.port))
+                # print("Connected to host: {} and port: {}".format(self.host, self.port))
                 break
     
     def update_friend_info(self):
@@ -276,7 +277,7 @@ class P2PClient:
         success = False
         # send connection request udp packet
         to_host, to_port = addr
-        res = send_udp('connect', self.host, self.port, to_host, to_port, "connection request from {}".format(self.username))
+        res = send_udp('connect', self.host, self.port, to_host, to_port, "connection request from {}".format(self.username), self.username)
         if res["status"] == 'success':
             print("Connection request to {} is accepted. Connecting...".format(username))
         else:
@@ -312,6 +313,19 @@ class P2PClient:
             if decision.lower() == 'yes':
                 self.udpsock.sendto(json.dumps({'status': 'success'}).encode(), addr)
                 self.start_server()
+                return True
+            else:
+                self.udpsock.sendto(json.dumps({'status': 'reject'}).encode(), addr)
+                return False
+        elif message["topic"] == 'add friend':
+            print("Received friend request from {}".format(message["senderName"]) + " with content {}".format(message["content"]))
+            decision = input("Do you accept the request? (yes/no): ")
+            if decision.lower() == 'yes':
+                self.udpsock.sendto(json.dumps({'status': 'success'}).encode(), addr)
+                # add friend
+                content = message["content"]
+                fhost, fport = content["address"]
+                self.friends[content["username"]] = {'address': (fhost, fport), 'status': 'online', 'last_update': time.time()}
                 return True
             else:
                 self.udpsock.sendto(json.dumps({'status': 'reject'}).encode(), addr)
@@ -352,29 +366,48 @@ class P2PClient:
         if not friend_online:
             print(f"{friend_username} is not online.")
             return
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            try:
-                s.connect((friend_host, friend_port))
-                request = {
-                    'type': 'friend_request',
-                    'username': self.username,
-                    'address': (self.host, self.port),
-                    'timestamp': time.time(),
-                }
-                message, length = self._process_response(request)
-                s.send(length + message)
-                response = receive_response(s)
-                response = json.loads(response)
-                if not response:
-                    return
-                if response["status"] == "success":
-                    print(f"{friend_username} accepted your friend request.")
-                    self.friends[friend_username] = {'address': (friend_host, friend_port), 'status': 'online', 'last_update': time.time()}
-                    save_friends(self.username, self.friends)
-                else:
-                    print(f"{friend_username} rejected your friend request.")
-            except Exception as e:
-                print(f"Error sending friend request: {str(e)}")
+        package = NSPackage('add_friend', friend_username)
+        message, length = self._process_response(package.to_dict())
+        self._send_response_to_server(message, length)
+        data = receive_response(self.nameserverconn)
+        retry_counter = 0
+        while not data:
+            print("Receive error: cannot receive message from nameserver on lookup. Retry in {} seconds".format(2**retry_counter))
+            time.sleep(2**retry_counter)
+            self._send_response_to_server(message, length)
+            data = receive_response(self.nameserverconn)
+        response = json.loads(data)
+        if not response:
+            return
+        if response["status"] == "success":
+            print(f"{friend_username} accepted your friend request.")
+            self.friends[friend_username] = {'address': (friend_host, friend_port), 'status': 'online', 'last_update': time.time()}
+            save_friends(self.username, self.friends)
+        else:
+            print(f"{friend_username} rejected your friend request.")
+        # with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        #     try:
+        #         s.connect((friend_host, friend_port))
+        #         request = {
+        #             'type': 'friend_request',
+        #             'username': self.username,
+        #             'address': (self.host, self.port),
+        #             'timestamp': time.time(),
+        #         }
+        #         message, length = self._process_response(request)
+        #         s.send(length + message)
+        #         response = receive_response(s)
+        #         response = json.loads(response)
+        #         if not response:
+        #             return
+        #         if response["status"] == "success":
+        #             print(f"{friend_username} accepted your friend request.")
+        #             self.friends[friend_username] = {'address': (friend_host, friend_port), 'status': 'online', 'last_update': time.time()}
+        #             save_friends(self.username, self.friends)
+        #         else:
+        #             print(f"{friend_username} rejected your friend request.")
+        #     except Exception as e:
+        #         print(f"Error sending friend request: {str(e)}")
 
     def disconnect(self):
         # Implement disconnecting and updating the name server and friends
@@ -440,8 +473,8 @@ class P2PClient:
         response = json.loads(data)
         if not isinstance(response, dict) or 'type' not in response:
             return 
-        if response['type'] == 'friend_request':
-            self.handle_friend_request(conn, data)
+        # if response['type'] == 'friend_request':
+        #     self.handle_friend_request(conn, data)
         elif response['type'] == 'message':
             # if response["username"] not in self.friends:
             #     return
