@@ -4,8 +4,9 @@ import socket
 import json
 import time
 from protocols import *
+from datetime import datetime
 
-NAMESERVER = ("129.74.152.141", 50729)
+NAMESERVER = ("129.74.152.141", 47697)
 UPDATE_INTERVAL = 60
 ACK_TIMEOUT = 5
 MSG_SIZE = 1024
@@ -124,12 +125,17 @@ class P2PClient:
         self.udpsock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.udpsock.bind((self.host, self.port))
         self.udpsock.settimeout(2.0)
+        self.chat_history = {}
 
     def __del__(self):
+        save_chat_history(self.username, self.chat_history)
+        save_friends(self.username, self.friends)
+        self.udpsock.close()
         if not isinstance(self.nameserverconn, bool):
            self.nameserverconn.close()
         if not isinstance(self.friendconn, bool):
            self.friendconn.close()
+        
     
     def list_friends(self):
         # Implement listing friends
@@ -137,6 +143,16 @@ class P2PClient:
         for friend in self.friends:
             print(friend["username"] + " " + friend["status"])
 
+    def get_chat_history(self, friend):
+        # Implement getting chat history
+        # Return a list of (timestamp, username, message)
+        if friend in self.chat_history:
+            for chat in self.chat_history[friend]:
+                print(chat[2] + "  " + chat[0] + ":  " + chat[1])
+            return self.chat_history[friend]
+        else:
+            print("No chat history with {}".format(friend))
+            return []
 
     # process a dictionary response and
     # return encoded message and length
@@ -253,7 +269,7 @@ class P2PClient:
             data = receive_response(self.nameserverconn)
         response = json.loads(data)
         if response:
-            print("Successfully lookup {}".format(username))
+            # print("Successfully lookup {}".format(username))
             if username in self.friends:
                 self.friends[username] = response
             return response # {'address': addr, 'status': status, 'last_update': last_update}
@@ -318,7 +334,8 @@ class P2PClient:
                 self.udpsock.sendto(json.dumps({'status': 'reject'}).encode(), addr)
                 return False
         elif message["topic"] == 'add friend':
-            print("Received friend request from {}".format(message["senderName"]) + " with content {}".format(message["content"]))
+            friendname = message["content"]["username"]
+            print(f"Received friend request from {friendname}")
             decision = input("Do you accept the request? (yes/no): ")
             if decision.lower() == 'yes':
                 self.udpsock.sendto(json.dumps({'status': 'success'}).encode(), addr)
@@ -445,6 +462,10 @@ class P2PClient:
                 return
             if response["status"] == "success":
                 #print(f"Message sent to {friend_username}.")
+                if friend_username not in self.chat_history:
+                    self.chat_history[friend_username] = []
+                dt_string = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+                self.chat_history[friend_username].append((self.username, msg, dt_string))
                 pass
             else:
                 print(f"Message failed to send to {friend_username}.")
@@ -456,8 +477,12 @@ class P2PClient:
         response = json.loads(data)
         if response['type'] == 'message':
             friend_username = response['username']
+            if friend_username not in self.chat_history:
+                self.chat_history[friend_username] = []
             msg = response['message']
             print(f"{friend_username}: {msg}")
+            dt_string = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+            self.chat_history[friend_username].append((friend_username, msg, dt_string))
             message = {"status": "success"}
             message, length = self._process_response(message)
             conn.sendall(length + message)
@@ -491,16 +516,16 @@ class P2PClient:
             s.bind((self.host, self.port))
             s.listen()
             port = s.getsockname()[1]
-            print("Listening on port " + str(port))
+            #print("Listening on port " + str(port))
             self.port = port
-            s.settimeout(5)
+            s.settimeout(10)
             while True:
                 try:
                     conn, addr = s.accept()
                     print('Connection established:', addr)
                 except socket.timeout:
                     print('Timeout occurred. No connection made.')
-                    continue
+                    break
                 with conn:
                     flag = False
                     while True:

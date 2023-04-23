@@ -2,23 +2,29 @@ from Client import P2PClient
 import select
 import socket
 import sys
+from time import strftime, localtime
 TIMEOUT = 5
 
 if __name__ == "__main__":
     # Get user's information
     username = input("Enter your username: ")
-    port = int(input("Enter your port number: "))
+    port = int(input("Enter your ID number: "))
     host = socket.gethostname()
-    print("Your host is " + host + "Your port is " + str(port) + ". Your username is " + username + ".")
+    #print("Your host is " + host + "Your port is " + str(port) + ". Your username is " + username + ".")
     # Initialize the P2P client
     p2p_client = P2PClient(username, host, port)
     # Start the server
     #p2p_client.start_server()
+    flag=False
     while True:
+        if not flag:
+            print(">", end="", flush=True)
+            flag=True
         rlist, wlist, xlist = select.select([sys.stdin], [], [], TIMEOUT)
         if rlist:
             # user has entered input
             command = input("")
+            flag=False
         else:
             # no input received within the timeout period
             p2p_client.handle_udp()
@@ -31,6 +37,9 @@ if __name__ == "__main__":
             p2p_client.go_online()
         elif command == "offline":
             p2p_client.go_offline()
+        elif command and command.split()[0] == "history":
+            username = command.split()[1]
+            p2p_client.get_chat_history(username)
         elif command == "listen": # open to chat
             p2p_client.start_server()
         elif command == "update":
@@ -38,12 +47,16 @@ if __name__ == "__main__":
         elif command and command.split()[0] == "lookup":
             username = command.split()[1]
             res = p2p_client.lookup(username)
-            print(res)
+            print("User: ", username)
+            print("Status: ", res["status"])
+            last_time = strftime('%Y-%m-%d %H:%M:%S', localtime(res["last_update"]))
+            print("Last updated: ", last_time)
+
         elif command and command.split()[0] == "connect": #connect to friend
             username = command.split()[1]
             conn = p2p_client.connect_to_friend(username)
             while True:
-                msg = input(">> ")
+                msg = input("> ")
                 if msg == "quit" or msg == "exit":
                     print("Exiting chat...")
                     break
