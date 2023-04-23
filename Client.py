@@ -366,7 +366,7 @@ class P2PClient:
         if not friend_online:
             print(f"{friend_username} is not online.")
             return
-        package = NSPackage('add_friend', friend_username)
+        package = NSPackage('add_friend', username=self.username, friend=friend_username)
         message, length = self._process_response(package.to_dict())
         self._send_response_to_server(message, length)
         data = receive_response(self.nameserverconn)
