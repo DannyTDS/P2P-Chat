@@ -324,7 +324,7 @@ class P2PClient:
                 self.udpsock.sendto(json.dumps({'status': 'success'}).encode(), addr)
                 # add friend
                 content = message["content"]
-                fhost, fport = content["address"]
+                fhost, fport = content["host"], content["port"]
                 self.friends[content["username"]] = {'address': (fhost, fport), 'status': 'online', 'last_update': time.time()}
                 return True
             else:
