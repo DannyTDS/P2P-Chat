@@ -276,7 +276,7 @@ class P2PClient:
         to_host, to_port = addr
         res = send_udp('connect', self.host, self.port, to_host, to_port, "connection request from {}".format(self.username))
         if res["status"] == 'success':
-            print("Successfully sent connection request to {}".format(username))
+            print("Connection request to {} is accepted. Connecting...".format(username))
         else:
             print("Error: cannot send or refused connection request to {}".format(username))
             return
@@ -303,14 +303,14 @@ class P2PClient:
         message = json.loads(message.decode())
         if message["topic"] == "connect":
             print("Received connection request from {}".format(message["senderName"]) + " with content {}".format(message["content"]))
-            res = {
-                'status': 'success',
-                # 'senderName': message['senderName'],
-                # 'senderHost': message['senderHost'],
-                # 'senderPort': message['senderPort'],
-                # 'topic': message['topic'],
-                # 'content': message['content'],
-            }
+            decision = input("Do you accept the request? (yes/no): ")
+            if decision.lower() == 'yes':
+                self.udpsock.sendto(json.dumps({'status': 'success'}).encode(), addr)
+                self.start_server()
+                return True
+            else:
+                self.udpsock.sendto(json.dumps({'status': 'reject'}).encode(), addr)
+                return False
 
     def handle_friend_request(self, conn, data):
         # Implement handling friend request from a peer
