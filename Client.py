@@ -5,7 +5,7 @@ import json
 import time
 from protocols import *
 
-NAMESERVER = ("129.74.152.141", 33285)
+NAMESERVER = ("129.74.152.141", 50729)
 UPDATE_INTERVAL = 60
 ACK_TIMEOUT = 5
 MSG_SIZE = 1024
@@ -252,7 +252,9 @@ class P2PClient:
             data = receive_response(self.nameserverconn)
         response = json.loads(data)
         if response:
-            print("Successfully lookup")
+            print("Successfully lookup {}".format(username))
+            if username in self.friends:
+                self.friends[username] = response
             return response # {'address': addr, 'status': status, 'last_update': last_update}
         else:
             print("Error: cannot lookup")
@@ -299,7 +301,10 @@ class P2PClient:
     # handle udp packet request
     def handle_udp(self):
         # receive udp packet
-        message, addr = self.udpsock.recvfrom(MSG_SIZE)
+        try:
+            message, addr = self.udpsock.recvfrom(MSG_SIZE)
+        except: #timeout
+            return False
         message = json.loads(message.decode())
         if message["topic"] == "connect":
             print("Received connection request from {}".format(message["senderName"]) + " with content {}".format(message["content"]))
