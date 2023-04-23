@@ -3,7 +3,7 @@ import time
 import os
 import json
 from select import select
-from protocols import UDPPackage
+from protocols import *
 
 # path to checkpoint and log files
 CKPT = 'catalog.ckpt'
@@ -29,7 +29,8 @@ class Catalog:
             'last_update': time.time(),
         }
         if verbose:
-            print("Registered user {} at {} as {}".format(name, address, status))
+            host, port = address
+            print("Registered user {} at {}:{} as {}".format(name, host, port, status))
 
     def lookup(self, name):
         # Lookup a user's information
@@ -210,8 +211,18 @@ class NameServer:
                     # lookup a user's information
                     user = self.catalog.lookup(msg['username'])
                     res = user if user else {'status': 'error'}
+                elif msg['op'] == 'add_friend':
+                    from_uname, to_uname = msg['username'], msg['friend']
+                    try:
+                        from_host, from_port = self.catalog.lookup(from_uname)['address']
+                        to_host, to_port = self.catalog.lookup(to_uname)['address']
+                    except TypeError:
+                        raise ValueError("User {} not found".format(from_uname))
+                    # send UDP request to to_uname about from_uname's request to add as a friend
+                    content = {'username': from_uname, 'host': from_host, 'port': from_port}
+                    res = self.send_udp('add friend', to_host, to_port, content)
                 else:
-                    raise ValueError("Unrecognized operation")
+                    raise ValueError("Unrecognized request")
             except ValueError:
                 res = {'status': 'error'}
             # Send response
@@ -219,6 +230,39 @@ class NameServer:
             sz = len(res).to_bytes(8, "big")
             client.send(sz + res)
             client.close()
+    
+    def send_udp(self, topic, to_host, to_port, content=None):
+        udp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        udp_sock.settimeout(10.0)
+        from_host, from_port = '', ''
+        if topic == 'add friend':
+            from_host, from_port = udp_sock.getsockname()
+        elif topic == 'address update':
+            from_host, from_port = self.host, self.port
+        message = {
+            'senderName': 'NAMESERVER',
+            'senderHost': from_host,
+            'senderPort': from_port,
+            'topic': topic,
+        }
+        if content:
+            message['content'] = content
+        message = json.dumps(message).encode()
+        udp_sock.sendto(message, (to_host, to_port))
+        # wait for response
+        if topic == 'address update':
+            udp_sock.close()
+            return
+        try:
+            response, _ = udp_sock.recvfrom(MSG_SIZE)
+            response = json.loads(response.decode())
+            if response['status'] == 'success':
+                res = {'status': 'success'}
+        except:
+            res = {'status': 'error'}
+        udp_sock.close()
+        return res
+
 
 
 if __name__ == '__main__':
