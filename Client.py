@@ -5,22 +5,22 @@ import json
 import time
 from protocols import *
 
-NAMESERVER = ("catalog.cse.nd.edu", 9097)
+NAMESERVER = ("129.74.152.141", 33285)
 UPDATE_INTERVAL = 60
 ACK_TIMEOUT = 5
 MSG_SIZE = 1024
 
 DEFAULT = {
-    'weike':{
-        'address': ('student11.cse.nd.edu', 1234),
-        'status': 'online',
-        'last_update': time.time()
-    },
-    "danny":{
-        'address': ('student11.cse.nd.edu', 1235),
-        'status': 'online',
-        'last_update': time.time()
-    }
+    # 'weike':{
+    #     'address': ('student11.cse.nd.edu', 1234),
+    #     'status': 'online',
+    #     'last_update': time.time()
+    # },
+    # "danny":{
+    #     'address': ('student11.cse.nd.edu', 1235),
+    #     'status': 'online',
+    #     'last_update': time.time()
+    # }
 
 }
 
@@ -124,6 +124,7 @@ class P2PClient:
         retry_counter = 0
         while True:
             try:
+                self.connect_to_name_server()
                 self.nameserverconn.send(length + message)
                 break
             except:
