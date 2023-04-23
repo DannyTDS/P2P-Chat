@@ -63,6 +63,8 @@ class Checkpoint:
         with open(self.path+'.tmp', 'w') as f:
             f.write(str(ts)+'\n')
             for name, user in catalog.items():
+                if isinstance(user['address'], list) or isinstance(user['address'], tuple):
+                    user['address'] = ' '.join(map(str, user['address']))
                 f.write(' '.join([name, user['address'], user['status']])+'\n')
             f.flush()
         os.sync()
@@ -114,6 +116,7 @@ class Log:
 
     def append(self, name, address, status) -> int:
         # append a new record to log file
+        address = ' '.join(map(str, address))
         self.log.write(' '.join([name, address, status])+'\n')
         self.log.flush()
         os.sync()
