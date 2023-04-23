@@ -34,7 +34,7 @@ if __name__ == "__main__":
         elif command == "listen": # open to chat
             p2p_client.start_server()
         elif command == "update":
-            p2p_client.update_friends()
+            p2p_client.update_friend_info()
         elif command and command.split()[0] == "lookup":
             username = command.split()[1]
             res = p2p_client.lookup(username)

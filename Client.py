@@ -187,8 +187,8 @@ class P2PClient:
         # Implement updating friend info from the name server
         retry_counter = 0
         for friend in self.friends:
-            raw = {'type': 'lookup', 'username': friend}
-            message, length = self._process_response(raw)
+            package = NSPackage('lookup', friend)
+            message, length = self._process_response(package.to_dict())
             self._send_response_to_server(message, length)
             data = receive_response(self.nameserverconn)
             while not data:
@@ -467,6 +467,7 @@ class P2PClient:
                     print('Connection established:', addr)
                 except socket.timeout:
                     print('Timeout occurred. No connection made.')
+                    continue
                 with conn:
                     flag = False
                     while True:
