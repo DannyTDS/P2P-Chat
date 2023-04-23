@@ -80,6 +80,32 @@ def receive_response(conn):
 
 
 
+# Send UDP
+def send_udp(topic, from_host, from_port, to_host, to_port, content=None):
+    udp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    udp_sock.settimeout(10.0)
+    message = {
+            'senderName': 'NAMESERVER',
+            'senderHost': from_host,
+            'senderPort': from_port,
+            'topic': topic,
+        }
+    if content:
+        message['content'] = content
+    message = json.dumps(message).encode()
+    udp_sock.sendto(message, (to_host, to_port))
+    # wait for response
+    try:
+        response, _ = udp_sock.recvfrom(MSG_SIZE)
+        response = json.loads(response.decode())
+        if response['status'] == 'success':
+            res = {'status': 'success'}
+    except:
+        res = {'status': 'error'}
+    udp_sock.close()
+    return res
+
+
 # Client class
 # Currently, only allow one connection at a time
 class P2PClient:
@@ -94,6 +120,9 @@ class P2PClient:
         self.nameserver = nameserver # (host, port)
         self.nameserverconn = False
         self.friendconn = False
+        self.udpsock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.udpsock.bind((self.host, self.port))
+        self.udpsock.settimeout(2.0)
 
     def __del__(self):
         if not isinstance(self.nameserverconn, bool):
@@ -243,6 +272,15 @@ class P2PClient:
         self.friendconn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         retry_counter = 0
         success = False
+        # send connection request udp packet
+        to_host, to_port = addr
+        res = send_udp('connect', self.host, self.port, to_host, to_port, "connection request from {}".format(self.username))
+        if res["status"] == 'success':
+            print("Successfully sent connection request to {}".format(username))
+        else:
+            print("Error: cannot send or refused connection request to {}".format(username))
+            return
+
         while True:
             try:
                 host, port = addr
@@ -257,6 +295,22 @@ class P2PClient:
                 print("Connected to host: {} and port: {}".format(host, port))
                 break
         return self.friendconn
+
+    # handle udp packet request
+    def handle_udp(self):
+        # receive udp packet
+        message, addr = self.udpsock.recvfrom(MSG_SIZE)
+        message = json.loads(message.decode())
+        if message["topic"] == "connect":
+            print("Received connection request from {}".format(message["senderName"]) + " with content {}".format(message["content"]))
+            res = {
+                'status': 'success',
+                # 'senderName': message['senderName'],
+                # 'senderHost': message['senderHost'],
+                # 'senderPort': message['senderPort'],
+                # 'topic': message['topic'],
+                # 'content': message['content'],
+            }
 
     def handle_friend_request(self, conn, data):
         # Implement handling friend request from a peer

@@ -1,5 +1,9 @@
 from Client import P2PClient
+import select
 import socket
+import sys
+TIMEOUT = 5
+
 if __name__ == "__main__":
     # Get user's information
     username = input("Enter your username: ")
@@ -11,7 +15,14 @@ if __name__ == "__main__":
     # Start the server
     #p2p_client.start_server()
     while True:
-        command = input(">")
+        rlist, wlist, xlist = select.select([sys.stdin], [], [], TIMEOUT)
+        if rlist:
+            # user has entered input
+            command = input("")
+        else:
+            # no input received within the timeout period
+            p2p_client.handle_udp()
+            continue
         if command == "quit" or command == "exit":
             print("Exiting commandline...")
             break
@@ -22,11 +33,11 @@ if __name__ == "__main__":
             p2p_client.go_offline()
         elif command == "listen": # open to chat
             p2p_client.start_server()
-        elif command.split()[0] == "lookup":
+        elif command and command.split()[0] == "lookup":
             username = command.split()[1]
             res = p2p_client.lookup(username)
             print(res)
-        elif command.split()[0] == "connect": #connect to friend
+        elif command and command.split()[0] == "connect": #connect to friend
             username = command.split()[1]
             conn = p2p_client.connect_to_friend(username)
             while True:
@@ -38,12 +49,13 @@ if __name__ == "__main__":
                 p2p_client.handle_client(conn)
         elif command == "list": # list friends
             p2p_client.list_friends()
-        elif command.split()[0] == "add": # add friend
+        elif command and command.split()[0] == "add": # add friend
             friend_username = command.split()[1]
             #addr = p2p_client.lookup(username)
             p2p_client.send_friend_request(friend_username)
         else:
             print("Invalid command. Please try again.")
+        
     # conn = p2p_client.connect_to_friend("weike")
     # while True:
     #     msg = input("> ")
