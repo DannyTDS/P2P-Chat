@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import os, shutil
 import socket
 import json
 import time
@@ -54,6 +55,7 @@ def load_friends(username):
     except FileNotFoundError:
         friends = DEFAULT
     return friends
+
 def save_friends(username, friends):
     # Implement saving friends to a file username.json
     with open(username + '.json', 'w') as f:
@@ -126,6 +128,8 @@ class P2PClient:
         self.udpsock.bind((self.host, self.port))
         self.udpsock.settimeout(2.0)
         self.chat_history = {}
+        self.posts = {}     # {post_id : post_path} mapping
+        self.post_cnt = 0   # monotonically increasing identifier for new post
 
     def __del__(self):
         save_chat_history(self.username, self.chat_history)
@@ -347,6 +351,14 @@ class P2PClient:
             else:
                 self.udpsock.sendto(json.dumps({'status': 'reject'}).encode(), addr)
                 return False
+        elif message["topic"] == 'new post':
+            print("There is a new post from {}!".format(message["senderName"]))
+        elif message["topic"] == 'get post':
+            self.send_post(message["senderName"], message["content"])
+        elif message["topic"] == 'post':
+            print("\n" + message["senderName"] + " posted:")
+            print(message["content"] + "\n> ", end="")
+            
 
     def handle_friend_request(self, conn, data):
         # Implement handling friend request from a peer
@@ -369,6 +381,7 @@ class P2PClient:
                 message, length = self._process_response(message)
                 conn.sendall(length + message)
                 print(f"You rejected {friend_username}'s friend request.")
+    
     def send_friend_request(self, friend_username):
         # Implement sending friend request to a peer
         if friend_username in self.friends:
@@ -542,3 +555,53 @@ class P2PClient:
                     if flag:
                         break
 
+    def upload_post(self, fpath: str):
+        ''' Upload a post from local space, create identifier for it and broadcast to friends '''
+        # Move post file to Posts folder, generate unique identifier for it
+        if not os.path.exists("Posts"):
+            os.mkdir("Posts")
+        filename = os.path.basename(fpath)
+        new_fpath = os.path.join("Posts", filename)
+        shutil.move(fpath, new_fpath)
+        self.posts[str(self.post_cnt)] = new_fpath
+        print("Uploaded post with id {}.".format(self.post_cnt))
+        print("> ", end="")
+        # TODO add post to persistent storage, load post from storage
+        # Broadcast post to friends
+        self.update_friend_info()
+        for info in self.friends.values():
+            to_host, to_port = info["address"]
+            if info["status"] == "online":
+                send_udp('new post', self.host, self.port, to_host, to_port, "New post available: {}:{}".format(self.username, self.post_cnt), self.username)
+        self.post_cnt += 1
+
+    def send_post(self, friend_username: str, post_id: str):
+        ''' Send a post to a friend '''
+        if friend_username not in self.friends:
+            # ignore the request if sender is not friend
+            return
+        friend_info = self.friends[friend_username]
+        friend_host, friend_port = friend_info["address"]
+        # send the content of the post file to the friend with UDP
+        if post_id not in self.posts:
+            text = "Post {} does not exist. Available posts are {}.".format(post_id, list(self.posts.keys()))
+        else:
+            fpath = self.posts[post_id]
+            with open(fpath, 'r') as f:
+                text = f.read()
+        send_udp('post', self.host, self.port, friend_host, friend_port, text, self.username)
+
+    def get_post(self, friend_username: str, post_id: str):
+        if friend_username not in self.friends:
+            print("Error: cannot get post from non-friend '{}'.".format(friend_username))
+            return
+        friend_info = self.friends[friend_username]
+        friend_host, friend_port = friend_info["address"]
+        # request to get the post from the friend with UDP
+        send_udp('get post', self.host, self.port, friend_host, friend_port, str(post_id), self.username)
+
+    def remove_post(self, post_id):
+        pass
+
+    def list_posts(self):
+        pass
