@@ -101,6 +101,17 @@ def send_udp(topic, from_host, from_port, to_host, to_port, content=None, name =
     # wait for response
     try:
         response, _ = udp_sock.recvfrom(MSG_SIZE)
+        retry_count = 1
+        while not response:
+            if retry_count > 5:
+                print("No response. Please try again later.")
+                raise socket.timeout("No response from user")
+            time.sleep(2 ** retry_count)
+            print("Retry in {} seconds".format(2 ** retry_count))
+            response, _ = udp_sock.recvfrom(MSG_SIZE)
+            retry_count += 1
+            
+
         response = json.loads(response.decode())
         if response['status'] == 'success':
             res = {'status': 'success'}
