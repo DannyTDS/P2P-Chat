@@ -90,8 +90,11 @@ class Log:
         try:
             self.log = open(self.path, 'r+')
         except FileNotFoundError:
-            self.log = open(self.path, 'w+')
-            self.log.write('0.0\n')
+            with open(self.path, 'w+') as f:
+                f.write('0.0\n')
+                f.flush()
+                os.fsync(f.fileno())
+            self.log = open(self.path, 'r+')
         self.length = 0
     
     def playback(self, catalog: Catalog, ckpt_ts: float):
