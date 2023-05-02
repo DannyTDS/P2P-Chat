@@ -109,8 +109,8 @@ class Log:
         else:
             for line in self.log.read().splitlines():
                 try:
-                    name, address, status = line.split()
-                    catalog.add(name, address, status, verbose=False)
+                    name, host, port, status = line.split()
+                    catalog.add(name, (host, port), status, verbose=False)
                     self.length += 1
                 except ValueError:
                     # invalid record, skip it
