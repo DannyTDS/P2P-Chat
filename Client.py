@@ -558,6 +558,9 @@ class P2PClient:
     def upload_post(self, fpath: str):
         ''' Upload a post from local space, create identifier for it and broadcast to friends '''
         # Move post file to Posts folder, generate unique identifier for it
+        if not os.path.exists(fpath):
+            print("File does not exist.")
+            return
         if not os.path.exists("Posts"):
             os.mkdir("Posts")
         filename = os.path.basename(fpath)
@@ -566,7 +569,6 @@ class P2PClient:
         self.posts[str(self.post_cnt)] = new_fpath
         print("Uploaded post with id {}.".format(self.post_cnt))
         print("> ", end="")
-        # TODO add post to persistent storage, load post from storage
         # Broadcast post to friends
         self.update_friend_info()
         for info in self.friends.values():
@@ -601,7 +603,13 @@ class P2PClient:
         send_udp('get post', self.host, self.port, friend_host, friend_port, str(post_id), self.username)
 
     def remove_post(self, post_id):
-        pass
+        if post_id not in self.posts:
+            return
+        fpath = self.posts[post_id]
+        os.remove(fpath)
+        del self.posts[post_id]
+        print("Removed post {}.".format(post_id))
 
     def list_posts(self):
-        pass
+        for post_id, fpath in self.posts.items():
+            print("[{}]\t{}".format(post_id, fpath))
