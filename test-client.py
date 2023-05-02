@@ -37,6 +37,7 @@ if __name__ == "__main__":
         if rlist:
             # user has entered input
             command = input("")
+            command = command.strip()
             flag=False
         else:
             # no input received within the timeout period
@@ -76,6 +77,9 @@ if __name__ == "__main__":
         elif command and command.split()[0] == "connect": #connect to friend
             username = command.split()[1]
             conn = p2p_client.connect_to_friend(username)
+            if not conn:
+                print("Failed to connect to friend")
+                continue
             while True:
                 msg = input("> ")
                 if msg == "quit" or msg == "exit":

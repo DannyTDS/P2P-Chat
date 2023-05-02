@@ -265,6 +265,13 @@ class NameServer:
             return
         try:
             response, _ = udp_sock.recvfrom(MSG_SIZE)
+            retry_counter  = 0
+            while not response:
+                time.sleep(2**retry_counter)
+                response, _ = udp_sock.recvfrom(MSG_SIZE)
+                retry_counter += 1
+                if retry_counter > 5:
+                    raise socket.timeout("No response from user")
             response = json.loads(response.decode())
             if response['status'] == 'success':
                 res = {'status': 'success'}

@@ -287,10 +287,10 @@ class P2PClient:
     def connect_to_friend(self, username):
         if username not in self.friends:
             print("Error: you are not friends with this user")
-            return
+            return False
         if self.friends[username]['status'] == 'offline':
             print("Error: this user is offline")
-            return
+            return False
         addr = self.friends[username]['address']
         self.friendconn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         retry_counter = 0
@@ -298,11 +298,16 @@ class P2PClient:
         # send connection request udp packet
         to_host, to_port = addr
         res = send_udp('connect', self.host, self.port, to_host, to_port, "connection request from {}".format(self.username), self.username)
+        while not res:
+            print("Error: cannot send connection request to {}".format(username))
+            time.sleep(2**retry_counter)
+            res = send_udp('connect', self.host, self.port, to_host, to_port, "connection request from {}".format(self.username), self.username)
+            retry_counter += 1
         if res["status"] == 'success':
             print("Connection request to {} is accepted. Connecting...".format(username))
         else:
             print("Error: cannot send or refused connection request to {}".format(username))
-            return
+            return False
 
         while True:
             try:
