@@ -45,7 +45,11 @@ if __name__ == "__main__":
             break
         elif command == "online":
             #p2p_client.connect_to_name_server()
-            p2p_client.go_online()
+            res = p2p_client.go_online()
+            if res:
+                print("Successfully go online")
+            else:
+                print("Failed to go online")
             online = True
         elif command == "offline":
             p2p_client.go_offline()

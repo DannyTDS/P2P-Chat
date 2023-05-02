@@ -236,9 +236,9 @@ class P2PClient:
         response = json.loads(data)
         if response['status'] == 'ok':
             self.online = True
-            print("Successfully go online")
+            return True
         else:
-            print("Error: cannot go online")
+            return False
     
     def go_offline(self):
         # Implement going offline and updating the name server
