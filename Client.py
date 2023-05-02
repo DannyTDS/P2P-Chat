@@ -144,8 +144,8 @@ class P2PClient:
     def list_friends(self):
         # Implement listing friends
         # Return a list of friends
-        for friend in self.friends:
-            print(friend["username"] + " " + friend["status"])
+        for name, friend_info in self.friends.items():
+            print(name + " " + friend_info['status'])
 
     def get_chat_history(self, friend):
         # Implement getting chat history
