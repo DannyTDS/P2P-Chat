@@ -23,10 +23,13 @@ if __name__ == "__main__":
     # Start the server
     #p2p_client.start_server()
     flag=False
+    online=False
     while True:
         if not flag:
             print("> ", end="", flush=True)
             flag=True
+        if online:
+            p2p_client.go_online()
         rlist, wlist, xlist = select.select([sys.stdin], [], [], TIMEOUT)
         if rlist:
             # user has entered input
@@ -38,10 +41,12 @@ if __name__ == "__main__":
             continue
         if command == "quit" or command == "exit":
             print("Exiting commandline...")
+            p2p_client.go_offline()
             break
         elif command == "online":
             #p2p_client.connect_to_name_server()
             p2p_client.go_online()
+            online = True
         elif command == "offline":
             p2p_client.go_offline()
         elif command and command.split()[0] == "history":
