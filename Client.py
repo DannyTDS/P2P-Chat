@@ -144,8 +144,8 @@ class P2PClient:
     def list_friends(self):
         # Implement listing friends
         # Return a list of friends
-        for friend in self.friends:
-            print(friend["username"] + " " + friend["status"])
+        for name, friend_info in self.friends.items():
+            print(name + " " + friend_info['status'])
 
     def get_chat_history(self, friend):
         # Implement getting chat history
@@ -236,9 +236,9 @@ class P2PClient:
         response = json.loads(data)
         if response['status'] == 'ok':
             self.online = True
-            print("Successfully go online")
+            return True
         else:
-            print("Error: cannot go online")
+            return False
     
     def go_offline(self):
         # Implement going offline and updating the name server
@@ -333,10 +333,10 @@ class P2PClient:
             if decision.lower() == 'yes':
                 self.udpsock.sendto(json.dumps({'status': 'success'}).encode(), addr)
                 self.start_server()
-                return True
+                #return True
             else:
                 self.udpsock.sendto(json.dumps({'status': 'reject'}).encode(), addr)
-                return False
+                #return False
         elif message["topic"] == 'add friend':
             friendname = message["content"]["username"]
             print(f"Received friend request from {friendname}")
@@ -347,10 +347,10 @@ class P2PClient:
                 content = message["content"]
                 fhost, fport = content["host"], content["port"]
                 self.friends[content["username"]] = {'address': (fhost, fport), 'status': 'online', 'last_update': time.time()}
-                return True
+                #return True
             else:
                 self.udpsock.sendto(json.dumps({'status': 'reject'}).encode(), addr)
-                return False
+                #return False
         elif message["topic"] == 'new post':
             print("There is a new post from {}!".format(message["senderName"]))
         elif message["topic"] == 'get post':
@@ -358,6 +358,7 @@ class P2PClient:
         elif message["topic"] == 'post':
             print("\n" + message["senderName"] + " posted:")
             print(message["content"] + "\n> ", end="")
+        return True
             
 
     def handle_friend_request(self, conn, data):
