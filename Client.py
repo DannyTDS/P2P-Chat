@@ -354,7 +354,7 @@ class P2PClient:
         elif message["topic"] == 'new post':
             print("There is a new post from {}!".format(message["senderName"]))
         elif message["topic"] == 'get post':
-            self.send_post(message["senderName"], message["content"])
+            self.send_post(message["senderName"], message["senderHost"], message["senderPort"], message["content"])
         elif message["topic"] == 'post':
             print("\n" + message["senderName"] + " posted:")
             print(message["content"] + "\n> ", end="")
@@ -567,7 +567,7 @@ class P2PClient:
         new_fpath = os.path.join("Posts", filename)
         shutil.move(fpath, new_fpath)
         self.posts[str(self.post_cnt)] = new_fpath
-        print("Uploaded post with id {}.".format(self.post_cnt))
+        print("Uploaded post with id [{}].".format(self.post_cnt))
         print("> ", end="")
         # Broadcast post to friends
         self.update_friend_info()
@@ -577,21 +577,29 @@ class P2PClient:
                 send_udp('new post', self.host, self.port, to_host, to_port, "New post available: {}:{}".format(self.username, self.post_cnt), self.username)
         self.post_cnt += 1
 
-    def send_post(self, friend_username: str, post_id: str):
+    def send_post(self, friend_username: str, to_host, to_port, post_id: str):
         ''' Send a post to a friend '''
         if friend_username not in self.friends:
             # ignore the request if sender is not friend
             return
-        friend_info = self.friends[friend_username]
-        friend_host, friend_port = friend_info["address"]
+        to_port = int(to_port)
         # send the content of the post file to the friend with UDP
         if post_id not in self.posts:
-            text = "Post {} does not exist. Available posts are {}.".format(post_id, list(self.posts.keys()))
+            text = "Post [{}] does not exist. Available posts are {}.".format(post_id, list(self.posts.keys()))
         else:
             fpath = self.posts[post_id]
             with open(fpath, 'r') as f:
                 text = f.read()
-        send_udp('post', self.host, self.port, friend_host, friend_port, text, self.username)
+        # send content via TCP provided
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            try:
+                s.connect((to_host, to_port))
+                message = {"type": "post", "username": self.username, "post_id": post_id, "content": text}
+                message, length = self._process_response(message)
+                s.sendall(length + message)
+            except:
+                # if error occurs, ignore it
+                pass
 
     def get_post(self, friend_username: str, post_id: str):
         if friend_username not in self.friends:
@@ -599,8 +607,25 @@ class P2PClient:
             return
         friend_info = self.friends[friend_username]
         friend_host, friend_port = friend_info["address"]
-        # request to get the post from the friend with UDP
-        send_udp('get post', self.host, self.port, friend_host, friend_port, str(post_id), self.username)
+        # request to get the post from the friend with UDP, receive content with TCP
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.bind((self.host, 0))
+            s.settimeout(5.0)
+            s.listen()
+            port = s.getsockname()[1]
+            send_udp('get post', self.host, port, friend_host, friend_port, str(post_id), self.username)
+            try:
+                conn, _ = s.accept()
+            except socket.timeout:
+                print("Error: failed to get post [{}] from '{}'.".format(post_id, friend_username))
+                return
+            data = receive_response(conn)
+            conn.close()
+            if not data:
+                print("Error: failed to get post [{}] from '{}'.".format(post_id, friend_username))
+            else:
+                print("{} posted:".format(friend_username))
+                print(data["content"])
 
     def remove_post(self, post_id):
         if post_id not in self.posts:
@@ -608,7 +633,7 @@ class P2PClient:
         fpath = self.posts[post_id]
         os.remove(fpath)
         del self.posts[post_id]
-        print("Removed post {}.".format(post_id))
+        print("Removed post [{}].".format(post_id))
 
     def list_posts(self):
         for post_id, fpath in self.posts.items():

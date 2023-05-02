@@ -165,7 +165,10 @@ class NameServer:
         broadcast.close()
 
     def __del__(self):
-        self.s.close()
+        try:
+            self.s.close()
+        except AttributeError:
+            pass
 
     def run(self):
         self.last_update_stale = time.time()
