@@ -24,12 +24,15 @@ if __name__ == "__main__":
     #p2p_client.start_server()
     flag=False
     online=False
+    online_counter = 0
     while True:
+        online_counter += 1
         if not flag:
             print("> ", end="", flush=True)
             flag=True
-        if online:
+        if online and online_counter % 60 == 0:
             p2p_client.go_online()
+            online_counter = 1
         rlist, wlist, xlist = select.select([sys.stdin], [], [], TIMEOUT)
         if rlist:
             # user has entered input
@@ -37,7 +40,9 @@ if __name__ == "__main__":
             flag=False
         else:
             # no input received within the timeout period
-            p2p_client.handle_udp()
+            status = p2p_client.handle_udp()
+            if status == True:
+                flag = False
             continue
         if command == "quit" or command == "exit":
             print("Exiting commandline...")
