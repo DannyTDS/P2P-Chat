@@ -162,7 +162,7 @@ class NameServer:
         package = UDPPackage('NAMESERVER', self.host, self.port, 'address update')
         for name, user in self.catalog.items():
             if user['status'] == 'online':
-                ip_addr, port = user['address'].split(":")
+                ip_addr, port = user['address']
                 port = int(port)
                 broadcast.sendto(str(package).encode(), (ip_addr, port))
         broadcast.close()
@@ -275,6 +275,8 @@ class NameServer:
             response = json.loads(response.decode())
             if response['status'] == 'success':
                 res = {'status': 'success'}
+            else:
+                res = {'status': 'error'}
         except:
             res = {'status': 'error'}
         udp_sock.close()
