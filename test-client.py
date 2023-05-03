@@ -15,7 +15,7 @@ if __name__ == "__main__":
         print("Usage: python test-client.py <nameserver_host>:<nameserver_port>")
         exit(1)
     username = input("Enter your username: ")
-    port = int(input("Enter your ID number: "))
+    port = int(input("Enter your ID number (port): "))
     host = socket.gethostname()
     #print("Your host is " + host + "Your port is " + str(port) + ". Your username is " + username + ".")
     # Initialize the P2P client
@@ -60,7 +60,11 @@ if __name__ == "__main__":
         elif command == "offline":
             p2p_client.go_offline()
         elif command and command.split()[0] == "history":
-            username = command.split()[1]
+            try:
+                username = command.split()[1]
+            except IndexError:
+                print("Usage: history <username>")
+                continue
             p2p_client.get_chat_history(username)
         elif command == "listen": # open to chat
             p2p_client.start_server()
@@ -71,7 +75,11 @@ if __name__ == "__main__":
         elif command == "update":
             p2p_client.update_friend_info()
         elif command and command.split()[0] == "lookup":
-            username = command.split()[1]
+            try:
+                username = command.split()[1]
+            except IndexError:
+                print("Usage: lookup <username>")
+                continue
             res = p2p_client.lookup(username)
             print("User: ", username)
             print("Status: ", res["status"])
@@ -79,7 +87,11 @@ if __name__ == "__main__":
             print("Last updated: ", last_time)
 
         elif command and command.split()[0] == "connect": #connect to friend
-            username = command.split()[1]
+            try:
+                username = command.split()[1]
+            except IndexError:
+                print("Usage: connect <username>")
+                continue
             conn = p2p_client.connect_to_friend(username)
             if not conn:
                 print("Failed to connect to friend")
@@ -97,7 +109,11 @@ if __name__ == "__main__":
         elif command == "list": # list friends
             p2p_client.list_friends()
         elif command and command.split()[0] == "add": # add friend
-            friend_username = command.split()[1]
+            try:
+                friend_username = command.split()[1]
+            except IndexError:
+                print("Usage: add <username>")
+                continue
             #addr = p2p_client.lookup(username)
             p2p_client.send_friend_request(friend_username)
         ### group chat ###

@@ -9,7 +9,7 @@ from protocols import *
 CKPT = 'catalog.ckpt'
 LOG = 'catalog.log'
 # maximum number of logs before checkpoint
-MAX_LOGS = 10
+MAX_LOGS = 100
 
 # maximum message size to reach each time in bytes
 MSG_SIZE = 1024
