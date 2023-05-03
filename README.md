@@ -66,3 +66,6 @@ This should bring you to a CLI waiting for user input. We supply the following c
 | post remove *id* | remove a post file by id |
 | post list | list all owned posts |
 | post get *username* *id* | request to get a post from another user |
+
+# Video demos
+[Private chat](https://drive.google.com/file/d/1jSZY459KEkFWlqZNrmry8UvDMHbh4pq8/view?usp=share_link) | [Group chat](https://drive.google.com/file/d/1Zc39VpYtDPgXQv-hEMbvFj7orxWcgNij/view?usp=share_link) | [Posts system](https://drive.google.com/file/d/1flqoAKEo0dPIbXUVlX1Lf0GINYWEBuPV/view?usp=share_link)
