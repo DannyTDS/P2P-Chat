@@ -30,7 +30,7 @@ if __name__ == "__main__":
         if not flag:
             print("> ", end="", flush=True)
             flag=True
-        if online and online_counter % 60 == 0:
+        if online and online_counter % 30 == 0:
             p2p_client.go_online()
             online_counter = 1
         rlist, wlist, xlist = select.select([sys.stdin], [], [], TIMEOUT)
@@ -52,6 +52,7 @@ if __name__ == "__main__":
         elif command == "online":
             #p2p_client.connect_to_name_server()
             res = p2p_client.go_online()
+            p2p_client.update_friend_info()
             if res:
                 print("Successfully go online")
             else:

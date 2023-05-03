@@ -391,12 +391,21 @@ class P2PClient:
             self.groups.pop(group_name)
             self.udpsock.sendto(json.dumps({'status': 'success'}).encode(), addr)
         elif message["topic"] == "leave group":
+            def find_member_index(group_name, friend_username):
+                for i, member in enumerate(self.groups[group_name]["members"]):
+                    if member[0] == friend_username:
+                        return i
+                return -1
             sender_name, group_name = message["content"].split()
             print(f"{sender_name} left group {group_name}")
-            self.groups[group_name]["members"].remove((sender_name, addr))
-            self.udpsock.sendto(json.dumps({'status': 'success'}).encode(), addr)
+            if sender_name == self.username:
+                print("Leaders cannot leave group")
+                self.udpsock.sendto(json.dumps({'status': 'reject'}).encode(), addr)
+            else:
+                self.groups[group_name]["members"].pop(find_member_index(group_name, sender_name))
+                self.udpsock.sendto(json.dumps({'status': 'success'}).encode(), addr)
         elif message["topic"] == "broadcast":
-            group_name = message["name"]
+            group_name = message["senderName"]
             sender_name = message["content"].split()[0]
             message_content = " ".join(message["content"].split()[1:])
             print("Group {}".format(group_name))
@@ -404,7 +413,7 @@ class P2PClient:
             print(message_content)
             self.udpsock.sendto(json.dumps({'status': 'success'}).encode(), addr)
         elif message["topic"] == "broadcast_request":
-            group_name = message["name"]
+            group_name = message["senderName"]
             sender_name = message["content"].split()[0]
             message_content = " ".join(message["content"].split()[1:])
             self.broadcast(group_name, message_content, sender_name)
@@ -666,7 +675,7 @@ class P2PClient:
             # "members": [(username, address), (username, address), ...]
             self.groups[group_name] = {"is_public": True, "members": [], "leader": self.username, "address": (self.host, self.port)}
             # register with name server
-            package = NSPackage('register', group_name, address=(self.host, self.port), status='online',is_group=True)
+            package = NSPackage('register', group_name, address=(self.host, self.port), status='online',isgroup=True)
             message, length = self._process_response(package.to_dict())
             self._send_response_to_server(message, length)
             data = receive_response(self.nameserverconn)
@@ -730,6 +739,7 @@ class P2PClient:
     
     def invite_to_group(self, group_name: str, friend_username: str):
         ''' Invite a friend to the group '''
+        self.update_group_info()
         # Send invite to friend
         if group_name not in self.groups:
             print("Error: group [{}] does not exist.".format(group_name))
@@ -759,6 +769,12 @@ class P2PClient:
             return False
         return True
     def remove_member(self, group_name: str, friend_username: str):
+        def find_member_index(group_name, friend_username):
+            for i, member in enumerate(self.groups[group_name]["members"]):
+                if member[0] == friend_username:
+                    return i
+            return -1
+        self.update_group_info()
         if self.username != self.groups[group_name]["leader"]:
             print("Error: only group leader can remove members.")
             return
@@ -771,7 +787,12 @@ class P2PClient:
         # Send remove notice to friend
         friend_host, friend_port = self.friends[friend_username]["address"]
         res = send_udp("remove from group", self.host, self.port, friend_host, friend_port, content="{} {}".format(self.username, group_name),name=self.username)
-        self.groups[group_name].remove((friend_username, (friend_host, friend_port)))
+        idx = find_member_index(group_name, friend_username)
+        if idx != -1:
+            self.groups[group_name].pop(idx)
+        else:
+            print("Error: friend [{}] is not in group [{}].".format(friend_username, group_name))
+            return
     
     def leave_group(self, group_name: str):
         ''' Leave a group '''
@@ -801,6 +822,7 @@ class P2PClient:
         return True
     # broadcast message to all members in the group
     def broadcast(self, group_name: str, message: str, sender_name = None):
+        self.update_group_info()
         if group_name not in self.groups:
             print("Error: group [{}] does not exist.".format(group_name))
             return
@@ -847,6 +869,16 @@ class P2PClient:
                 return False
         return True
     
+    def update_group_info(self):
+        for group, group_info in self.groups.items:
+            if self.username == group_info["leader"]:
+                for member in group_info["members"]:
+                    if member[0] not in self.friends:
+                        group_info["members"].remove(member)
+                    else:
+                        # look up the most updated address
+                        group_info["members"][member[0]] = (member[0], self.friends[member[0]]["address"])
+                    
 
 
 ### Posting ###

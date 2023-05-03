@@ -26,11 +26,12 @@ class UDPPackage(Base):
 
 class NSPackage(Base):
     '''Package for NameServer'''
-    def __init__(self, op, username, address=None, status=None, friend=None, isgroup=False):
+    def __init__(self, op, username, address=None, status=None, friend=None, isgroup=None):
         super().__init__()
         self.kwargs = {
             'op': op,
-            'username': username
+            'username': username,
+            'isgroup': 'False',
         }
         if address:
             self.kwargs['address'] = address
