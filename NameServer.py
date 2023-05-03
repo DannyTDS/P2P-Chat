@@ -243,7 +243,7 @@ class NameServer:
     
     def send_udp(self, topic, to_host, to_port, content=None):
         udp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        udp_sock.settimeout(10.0)
+        udp_sock.settimeout(20.0)
         from_host, from_port = '', ''
         if topic == 'add friend':
             from_host, from_port = udp_sock.getsockname()

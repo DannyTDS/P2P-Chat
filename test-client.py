@@ -84,9 +84,12 @@ if __name__ == "__main__":
                 msg = input("> ")
                 if msg == "quit" or msg == "exit":
                     print("Exiting chat...")
+                    p2p_client.send_msg_to_friend(username, msg)
                     break
                 p2p_client.send_msg_to_friend(username, msg)
-                p2p_client.handle_client(conn)
+                rec = p2p_client.handle_client(conn)
+                if rec == "Fault":
+                    break
         elif command == "list": # list friends
             p2p_client.list_friends()
         elif command and command.split()[0] == "add": # add friend

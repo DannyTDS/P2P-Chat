@@ -528,6 +528,13 @@ class P2PClient:
             if friend_username not in self.chat_history:
                 self.chat_history[friend_username] = []
             msg = response['message']
+            if msg == "exit" or msg == "quit":
+                print(f"{friend_username} has exited.")
+                self.chat_history[friend_username].append((friend_username, msg, datetime.now().strftime("%d/%m/%Y %H:%M:%S")))
+                message = {"status": "success"}
+                message, length = self._process_response(message)
+                conn.sendall(length + message)
+                return "Fault"
             print(f"{friend_username}: {msg}")
             dt_string = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
             self.chat_history[friend_username].append((friend_username, msg, dt_string))
@@ -571,9 +578,12 @@ class P2PClient:
                     break
                 with conn:
                     flag = False
+                    self.friendconn = conn
                     while True:
                         friend_username = self.handle_client(conn, addr)
-                        self.friendconn = conn
+                        if friend_username == "Fault":
+                            flag = True
+                            break
                         msg = input("> ")
                         #message = {"type":"message", "username":self.username, "message":msg}
                         #msg, length = self._process_response(message)
