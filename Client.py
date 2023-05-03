@@ -390,11 +390,33 @@ class P2PClient:
         elif message["topic"] == 'post':
             print("\n" + message["senderName"] + " posted:")
             print(message["content"] + "\n> ", end="")
+        elif message["topic"] == "message":
+            print("\n" + message["senderName"] + " sent you a message:")
+            print(message["content"] + "\n", end="")
+            self.udpsock.sendto(json.dumps({'status': 'success'}).encode(), addr)
         else:
             print("Received udp packet with unknown topic")
             print(message)
         return True
-            
+    
+    def send_udp_msg(self, friendname, msg):
+        if friendname not in self.friends:
+            print("Error: you are not friends with this user")
+            return False
+        if self.friends[friendname]['status'] == 'offline':
+            print("Error: this user is offline")
+            return False
+        addr = self.friends[friendname]['address']
+        if isinstance(addr, str):
+            to_host, to_port = addr.split()[0], int(addr.split()[1])
+        else:
+            to_host, to_port = addr
+        res = send_udp('message', self.host, self.port, to_host, to_port, msg, self.username)
+        if res:
+            print("Message sent to {}".format(friendname))
+        else:
+            print("Error: cannot send message to {}".format(friendname))
+        return res
 
     def handle_friend_request(self, conn, data):
         # Implement handling friend request from a peer

@@ -64,6 +64,10 @@ if __name__ == "__main__":
             p2p_client.get_chat_history(username)
         elif command == "listen": # open to chat
             p2p_client.start_server()
+        elif command and len(command.split()) >= 3 and command.split()[0] == "message": # send udp message to a friend
+            username = command.split()[1]
+            msg = " ".join(command.split()[2:]).strip('"')
+            p2p_client.send_udp_msg(username, msg)
         elif command == "update":
             p2p_client.update_friend_info()
         elif command and command.split()[0] == "lookup":
