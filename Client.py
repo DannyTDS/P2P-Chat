@@ -767,8 +767,6 @@ class P2PClient:
                 return False
         if jres["status"] == 'success':
             print("Request to join group {} is approved by the group leader.".format(group_name))
-            if "leader" not in jres:
-                print(jres)
             leader_name = jres["leader"]
             self.groups[group_name] = {"is_public": True, "members": jres["members"], "leader": leader_name, "address": (group_host, group_port)}
             save_groups(self.username, self.groups)
@@ -975,7 +973,6 @@ class P2PClient:
             print("Error: cannot get post from non-friend '{}'.".format(friend_username))
             return
         friend_info = self.friends[friend_username]
-        print(friend_info)
         friend_host, friend_port = friend_info["address"]
         # request to get the post from the friend with UDP
         send_udp('get post', self.host, self.port, friend_host, friend_port, str(post_id), self.username, recv=False)
