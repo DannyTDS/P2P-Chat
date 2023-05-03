@@ -30,13 +30,14 @@ if __name__ == "__main__":
         if not flag:
             print("> ", end="", flush=True)
             flag=True
-        if online and online_counter % 60 == 0:
+        if online and online_counter % 30 == 0:
             p2p_client.go_online()
             online_counter = 1
         rlist, wlist, xlist = select.select([sys.stdin], [], [], TIMEOUT)
         if rlist:
             # user has entered input
             command = input("")
+            command = command.strip()
             flag=False
         else:
             # no input received within the timeout period
@@ -51,6 +52,7 @@ if __name__ == "__main__":
         elif command == "online":
             #p2p_client.connect_to_name_server()
             res = p2p_client.go_online()
+            p2p_client.update_friend_info()
             if res:
                 print("Successfully go online")
             else:
@@ -63,6 +65,10 @@ if __name__ == "__main__":
             p2p_client.get_chat_history(username)
         elif command == "listen": # open to chat
             p2p_client.start_server()
+        elif command and len(command.split()) >= 3 and command.split()[0] == "message": # send udp message to a friend
+            username = command.split()[1]
+            msg = " ".join(command.split()[2:]).strip('"')
+            p2p_client.send_udp_msg(username, msg)
         elif command == "update":
             p2p_client.update_friend_info()
         elif command and command.split()[0] == "lookup":
@@ -76,20 +82,52 @@ if __name__ == "__main__":
         elif command and command.split()[0] == "connect": #connect to friend
             username = command.split()[1]
             conn = p2p_client.connect_to_friend(username)
+            if not conn:
+                print("Failed to connect to friend")
+                continue
             while True:
                 msg = input("> ")
                 if msg == "quit" or msg == "exit":
                     print("Exiting chat...")
+                    p2p_client.send_msg_to_friend(username, msg)
                     break
                 p2p_client.send_msg_to_friend(username, msg)
-                p2p_client.handle_client(conn)
+                rec = p2p_client.handle_client(conn)
+                if rec == "Fault":
+                    break
         elif command == "list": # list friends
             p2p_client.list_friends()
         elif command and command.split()[0] == "add": # add friend
             friend_username = command.split()[1]
             #addr = p2p_client.lookup(username)
             p2p_client.send_friend_request(friend_username)
-        # post system
+        ### group chat ###
+        elif command and len(command.split()) >= 2 and command.split()[0] == 'create_group':
+            group_name = command.split()[1]
+            if len(command.split()) > 2:
+                is_public = bool(command.split()[2])
+            else:
+                is_public = True
+            p2p_client.create_group(group_name, is_public)
+        elif command and len(command.split()) >= 2 and command.split()[0] == 'join_group':
+            p2p_client.join_group(command.split()[1])
+        elif command and len(command.split()) >= 2 and command.split()[0] == 'leave_group':
+            p2p_client.leave_group(command.split()[1])
+        elif command and len(command.split()) >= 3 and command.split()[0] == 'invite':
+            group_name = command.split()[1]
+            friend_username = command.split()[2]
+            p2p_client.invite_to_group(group_name, friend_username)
+        elif command and len(command.split()) >= 3 and command.split()[0] == 'remove_member':
+            group_name = command.split()[1]
+            friend_username = command.split()[2]
+            p2p_client.remove_member(group_name, friend_username)
+        elif command and len(command.split()) >= 3 and command.split()[0] == 'broadcast':
+            group_name = command.split()[1]
+            message = " ".join(command.split()[2:]).strip('"')
+            p2p_client.broadcast(group_name, message)
+        
+
+        #### post system ###
         elif command and command.split()[0] == 'post':
             try:
                 args = command.split()[1:]

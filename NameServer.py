@@ -20,14 +20,17 @@ class Catalog:
     def __init__(self):
         self._catalog = dict()
 
-    def add(self, name, address, status, verbose=True):
+    def add(self, name, address, status, verbose=True, isgroup= False):
         # Add a new user to the catalog or update an existing user's information
         # address is a tuple of (host, port)
         self._catalog[name] = {
             'address': address,
             'status': status,
             'last_update': time.time(),
+            'isgroup': False,
         }
+        if isgroup:
+            self._catalog[name]['isgroup'] = True
         if verbose:
             host, port = address
             print("Registered user {} at {}:{} as {}".format(name, host, port, status))
@@ -46,6 +49,8 @@ class Catalog:
         ts = time.time()
         updated = []
         for name, user in self._catalog.items():
+            if user['isgroup']:
+                continue
             if ts - user['last_update'] > 120.0 and user['status'] == 'online':
                 self._catalog[name]["status"] = 'offline'
                 if verbose:
@@ -162,7 +167,7 @@ class NameServer:
         package = UDPPackage('NAMESERVER', self.host, self.port, 'address update')
         for name, user in self.catalog.items():
             if user['status'] == 'online':
-                ip_addr, port = user['address'].split(":")
+                ip_addr, port = user['address']
                 port = int(port)
                 broadcast.sendto(str(package).encode(), (ip_addr, port))
         broadcast.close()
@@ -243,7 +248,7 @@ class NameServer:
     
     def send_udp(self, topic, to_host, to_port, content=None):
         udp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        udp_sock.settimeout(10.0)
+        udp_sock.settimeout(20.0)
         from_host, from_port = '', ''
         if topic == 'add friend':
             from_host, from_port = udp_sock.getsockname()
@@ -265,9 +270,20 @@ class NameServer:
             return
         try:
             response, _ = udp_sock.recvfrom(MSG_SIZE)
+            retry_counter  = 1
+            while not response:
+                time.sleep(2**retry_counter)
+                print("No response from user, retry in {} seconds".format(2**retry_counter))
+                response, _ = udp_sock.recvfrom(MSG_SIZE)
+                retry_counter += 1
+                if retry_counter > 5:
+                    print("No response. Please try again later.")
+                    raise socket.timeout("No response from user")
             response = json.loads(response.decode())
             if response['status'] == 'success':
                 res = {'status': 'success'}
+            else:
+                res = {'status': 'error'}
         except:
             res = {'status': 'error'}
         udp_sock.close()

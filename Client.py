@@ -12,19 +12,7 @@ UPDATE_INTERVAL = 60
 ACK_TIMEOUT = 5
 MSG_SIZE = 1024
 
-DEFAULT = {
-    # 'weike':{
-    #     'address': ('student11.cse.nd.edu', 1234),
-    #     'status': 'online',
-    #     'last_update': time.time()
-    # },
-    # "danny":{
-    #     'address': ('student11.cse.nd.edu', 1235),
-    #     'status': 'online',
-    #     'last_update': time.time()
-    # }
-
-}
+DEFAULT = {}
 
 # Helper functions
 def save_chat_history(username, chat_history):
@@ -52,6 +40,10 @@ def load_friends(username):
     try:
         with open(username + '.json', 'r') as f:
             friends = json.load(f)
+        for friend in friends:
+            if isinstance(friends[friend]["address"], str):
+                host, port = friends[friend]["address"].split()
+                friends[friend]["address"] = (host, int(port))
     except FileNotFoundError:
         friends = DEFAULT
     return friends
@@ -86,7 +78,7 @@ def receive_response(conn):
 # Send UDP
 def send_udp(topic, from_host, from_port, to_host, to_port, content=None, name = None):
     udp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    udp_sock.settimeout(10.0)
+    udp_sock.settimeout(10)
     message = {
             'senderHost': from_host,
             'senderPort': from_port,
@@ -99,12 +91,16 @@ def send_udp(topic, from_host, from_port, to_host, to_port, content=None, name =
     message = json.dumps(message).encode()
     udp_sock.sendto(message, (to_host, to_port))
     # wait for response
+    #retry_count = 1
     try:
         response, _ = udp_sock.recvfrom(MSG_SIZE)
-        response = json.loads(response.decode())
-        if response['status'] == 'success':
-            res = {'status': 'success'}
-    except:
+    except socket.timeout:
+        return None
+
+    response = json.loads(response.decode())
+    if response['status'] == 'success':
+        return response
+    else:
         res = {'status': 'error'}
     udp_sock.close()
     return res
@@ -126,10 +122,11 @@ class P2PClient:
         self.friendconn = False
         self.udpsock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.udpsock.bind((self.host, self.port))
-        self.udpsock.settimeout(2.0)
+        self.udpsock.settimeout(5.0)
         self.chat_history = {}
         self.posts = {}     # {post_id : post_path} mapping
         self.post_cnt = 0   # monotonically increasing identifier for new post
+        self.groups = {}    # {group_name : [group_members]} mapping
 
     def __del__(self):
         save_chat_history(self.username, self.chat_history)
@@ -274,6 +271,10 @@ class P2PClient:
         response = json.loads(data)
         if response:
             # print("Successfully lookup {}".format(username))
+            if isinstance(response["address"], str):
+                    host, port = response["address"].split()
+                    port = int(port)
+                    response["address"] = (host, port)
             if username in self.friends:
                 self.friends[username] = response
             return response # {'address': addr, 'status': status, 'last_update': last_update}
@@ -287,22 +288,33 @@ class P2PClient:
     def connect_to_friend(self, username):
         if username not in self.friends:
             print("Error: you are not friends with this user")
-            return
+            return False
         if self.friends[username]['status'] == 'offline':
             print("Error: this user is offline")
-            return
+            return False
         addr = self.friends[username]['address']
         self.friendconn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.friendconn.settimeout(5.0)
         retry_counter = 0
         success = False
         # send connection request udp packet
-        to_host, to_port = addr
+        if isinstance(addr, str):
+            to_host, to_port = addr.split()[0], int(addr.split()[1])
+        else:
+            to_host, to_port = addr
         res = send_udp('connect', self.host, self.port, to_host, to_port, "connection request from {}".format(self.username), self.username)
+        while not res:
+            print(f"Error: cannot send connection request to {username} {to_host}:{to_port} retry in {2**retry_counter} sec")
+            time.sleep(1)
+            res = send_udp('connect', self.host, self.port, to_host, to_port, "connection request from {}".format(self.username), self.username)
+            retry_counter += 1
+            if retry_counter > 10:
+                return False
         if res["status"] == 'success':
             print("Connection request to {} is accepted. Connecting...".format(username))
         else:
             print("Error: cannot send or refused connection request to {}".format(username))
-            return
+            return False
 
         while True:
             try:
@@ -332,7 +344,7 @@ class P2PClient:
             decision = input("Do you accept the request? (yes/no): ")
             if decision.lower() == 'yes':
                 self.udpsock.sendto(json.dumps({'status': 'success'}).encode(), addr)
-                self.start_server()
+                self.start_server(message["senderName"])
                 #return True
             else:
                 self.udpsock.sendto(json.dumps({'status': 'reject'}).encode(), addr)
@@ -351,6 +363,61 @@ class P2PClient:
             else:
                 self.udpsock.sendto(json.dumps({'status': 'reject'}).encode(), addr)
                 #return False
+        elif message["topic"] == "join group":
+            user_name, group_name = message["content"].split()
+            print(f"Received join group request from {user_name} to join group {group_name}")
+            decision = input("Do you accept the request? (yes/no): ")
+            if decision.lower() == 'yes':
+                self.groups[group_name]["members"].append((user_name, addr))
+                self.udpsock.sendto(json.dumps({'status': 'success', "leader": self.username, "members":self.groups[group_name]["members"]}).encode(), addr)
+            else:
+                self.udpsock.sendto(json.dumps({'status': 'reject'}).encode(), addr)
+                return False
+        elif message["topic"] == "invite to group":
+            sender_name, group_name = message["content"].split()
+            print(f"Received invite to group {group_name} from {sender_name}")
+            decision = input("Do you accept the request? (yes/no): ")
+            if decision.lower() == 'yes':
+                self.udpsock.sendto(json.dumps({'status': 'success'}).encode(), addr)
+                # add group
+                self.groups[group_name] = {"leader": sender_name, "members": [(self.username, addr)], "address": addr}
+                #return True
+            else:
+                self.udpsock.sendto(json.dumps({'status': 'reject'}).encode(), addr)
+                #return False
+        elif message["topic"] == "remove from group":
+            sender_name, group_name = message["content"].split()
+            print(f"You are removed from group {group_name} by {sender_name}")
+            self.groups.pop(group_name)
+            self.udpsock.sendto(json.dumps({'status': 'success'}).encode(), addr)
+        elif message["topic"] == "leave group":
+            def find_member_index(group_name, friend_username):
+                for i, member in enumerate(self.groups[group_name]["members"]):
+                    if member[0] == friend_username:
+                        return i
+                return -1
+            sender_name, group_name = message["content"].split()
+            print(f"{sender_name} left group {group_name}")
+            if sender_name == self.username:
+                print("Leaders cannot leave group")
+                self.udpsock.sendto(json.dumps({'status': 'reject'}).encode(), addr)
+            else:
+                self.groups[group_name]["members"].pop(find_member_index(group_name, sender_name))
+                self.udpsock.sendto(json.dumps({'status': 'success'}).encode(), addr)
+        elif message["topic"] == "broadcast":
+            group_name = message["senderName"]
+            sender_name = message["content"].split()[0]
+            message_content = " ".join(message["content"].split()[1:])
+            print("Group {}".format(group_name))
+            print(f"{sender_name} broadcasted:")
+            print(message_content)
+            self.udpsock.sendto(json.dumps({'status': 'success'}).encode(), addr)
+        elif message["topic"] == "broadcast_request":
+            group_name = message["senderName"]
+            sender_name = message["content"].split()[0]
+            message_content = " ".join(message["content"].split()[1:])
+            self.broadcast(group_name, message_content, sender_name)
+            self.udpsock.sendto(json.dumps({'status': 'success'}).encode(), addr)
         elif message["topic"] == 'new post':
             print("There is a new post from {}!".format(message["senderName"]))
         elif message["topic"] == 'get post':
@@ -358,8 +425,33 @@ class P2PClient:
         elif message["topic"] == 'post':
             print("\n" + message["senderName"] + " posted:")
             print(message["content"] + "\n> ", end="")
+        elif message["topic"] == "message":
+            print("\n" + message["senderName"] + " sent you a message:")
+            print(message["content"] + "\n", end="")
+            self.udpsock.sendto(json.dumps({'status': 'success'}).encode(), addr)
+        else:
+            print("Received udp packet with unknown topic")
+            print(message)
         return True
-            
+    
+    def send_udp_msg(self, friendname, msg):
+        if friendname not in self.friends:
+            print("Error: you are not friends with this user")
+            return False
+        if self.friends[friendname]['status'] == 'offline':
+            print("Error: this user is offline")
+            return False
+        addr = self.friends[friendname]['address']
+        if isinstance(addr, str):
+            to_host, to_port = addr.split()[0], int(addr.split()[1])
+        else:
+            to_host, to_port = addr
+        res = send_udp('message', self.host, self.port, to_host, to_port, msg, self.username)
+        if res:
+            print("Message sent to {}".format(friendname))
+        else:
+            print("Error: cannot send message to {}".format(friendname))
+        return res
 
     def handle_friend_request(self, conn, data):
         # Implement handling friend request from a peer
@@ -470,10 +562,9 @@ class P2PClient:
             message, length = self._process_response(request)
             self.friendconn.send(length + message)
             response = receive_response(self.friendconn)
-            response = json.loads(response)
-            #print("response: ", response, "type: ", type(response))
             if not response:
                 return
+            response = json.loads(response)
             if response["status"] == "success":
                 #print(f"Message sent to {friend_username}.")
                 if friend_username not in self.chat_history:
@@ -494,6 +585,13 @@ class P2PClient:
             if friend_username not in self.chat_history:
                 self.chat_history[friend_username] = []
             msg = response['message']
+            if msg == "exit" or msg == "quit":
+                print(f"{friend_username} has exited.")
+                self.chat_history[friend_username].append((friend_username, msg, datetime.now().strftime("%d/%m/%Y %H:%M:%S")))
+                message = {"status": "success"}
+                message, length = self._process_response(message)
+                conn.sendall(length + message)
+                return "Fault"
             print(f"{friend_username}: {msg}")
             dt_string = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
             self.chat_history[friend_username].append((friend_username, msg, dt_string))
@@ -502,6 +600,7 @@ class P2PClient:
             conn.sendall(length + message)
             return friend_username
             #print(f"Message sent to {friend_username}.")
+        return "Fault"
 
     def handle_client(self, conn, addr=None):
         # Implement handling client connections and incoming messages
@@ -512,19 +611,13 @@ class P2PClient:
         response = json.loads(data)
         if not isinstance(response, dict) or 'type' not in response:
             return 
-        # if response['type'] == 'friend_request':
-        #     self.handle_friend_request(conn, data)
         elif response['type'] == 'message':
-            # if response["username"] not in self.friends:
-            #     return
-            # else:
-            #     
             friend_username = self.handle_incoming_msg(conn, data)
             return friend_username
         else:
             print("Unknown request type.")
 
-    def start_server(self):
+    def start_server(self,friend_username=None):
         # Implement starting the server to listen for incoming connections
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.bind((self.host, self.port))
@@ -542,9 +635,12 @@ class P2PClient:
                     break
                 with conn:
                     flag = False
+                    self.friendconn = conn
                     while True:
                         friend_username = self.handle_client(conn, addr)
-                        self.friendconn = conn
+                        if friend_username == "Fault":
+                            flag = True
+                            break
                         msg = input("> ")
                         #message = {"type":"message", "username":self.username, "message":msg}
                         #msg, length = self._process_response(message)
@@ -556,6 +652,241 @@ class P2PClient:
                     if flag:
                         break
 
+
+### Group Chatting ###
+# 1. The person creating the group is the leader of the group and is responsible for 
+#    registering the chat server with the name server (for public groups)
+# 2. The leader picks whether the group is publicly visible or by invitation only
+#    For public groups: discoverable on the name server and anyone can join by request
+#    For private groups: not discoverable on the name server and only invited members can join
+# 3. The leader can invite friends to join the group, remove members from the group, and manage join requests
+# 4. The leader should keep track of members and their addresses
+# 5. If a group member wants to leave a group, it should send a message to the leader
+# 6. If the leader leaves the group, a new leader should be elected (TODO)
+# 7. To send a message in the group chat, the client should send the message to the leader, and the leader
+#   should broadcast the message to all members
+    
+    def create_group(self, group_name: str, is_public: bool):
+        ''' Create a group with the given name and visibility '''
+        # Register group with name server
+        # Create group chat server
+        # Add group to own group list
+        if is_public:
+            # "members": [(username, address), (username, address), ...]
+            self.groups[group_name] = {"is_public": True, "members": [], "leader": self.username, "address": (self.host, self.port)}
+            # register with name server
+            package = NSPackage('register', group_name, address=(self.host, self.port), status='online',isgroup=True)
+            message, length = self._process_response(package.to_dict())
+            self._send_response_to_server(message, length)
+            data = receive_response(self.nameserverconn)
+            retry_counter = 0
+            while not data:
+                print("Receive error: cannot receive message from nameserver on go_online. Retry in {} seconds".format(2**retry_counter))
+                time.sleep(2**retry_counter)
+                self._send_response_to_server(message, length)
+                data = receive_response(self.nameserverconn)
+            response = json.loads(data)
+            if response['status'] == 'ok':
+                print("Created public group [{}].".format(group_name))
+            else:
+                print("Error: cannot register with nameserver.")
+                return
+        else:
+            self.groups[group_name] = {"is_public": False, "members": [], "leader": self.username, "address": (self.host, self.port)}
+            print("Created private group [{}].".format(group_name))
+    
+    def join_group(self, group_name: str): # join a public group
+        ''' Join a public group with the given name '''
+        # Find the group on name server
+        package = NSPackage('lookup', group_name)
+        message, length = self._process_response(package.to_dict())
+        self._send_response_to_server(message, length)
+        data = receive_response(self.nameserverconn)
+        retry_counter = 0
+        while not data:
+            print("Receive error: cannot receive message from nameserver on lookup. Retry in {} seconds".format(2**retry_counter))
+            time.sleep(2**retry_counter)
+            self._send_response_to_server(message, length)
+            data = receive_response(self.nameserverconn)
+        response = json.loads(data) # response is a dict{'address': address,'status': status,'last_update': time.time(),'isgroup': True}
+        if response:
+            if isinstance(response["address"], str):
+                    host, port = response["address"].split()
+                    port = int(port)
+                    response["address"] = (host, port)
+        else:
+            print("Error: cannot lookup")
+            return None
+
+        # Send join request to group leader
+        group_host, group_port = response["address"]
+        jres = send_udp("join group", self.host, self.port, group_host, group_port, content="{} {}".format(self.username, group_name),name=self.username)
+        while not jres:
+            print(f"Error: cannot send join group request for {group_name}. Retry in {2**retry_counter} sec")
+            time.sleep(1)
+            jres = send_udp("join group", self.host, self.port, group_host, group_port, content="{} {}".format(self.username, group_name),name=self.username)
+            retry_counter += 1
+            if retry_counter > 10:
+                return False
+        if jres["status"] == 'success':
+            print("Request to join group {} is approved by the group leader.".format(group_name))
+            if "leader" not in jres:
+                print(jres)
+            leader_name = jres["leader"]
+            self.groups[group_name] = {"is_public": True, "members": jres["members"], "leader": leader_name, "address": (group_host, group_port)}
+        else:
+            print("Error: cannot send join group request to {}".format(group_name))
+            return False
+        return True
+    
+    def invite_to_group(self, group_name: str, friend_username: str):
+        ''' Invite a friend to the group '''
+        self.update_group_info()
+        # Send invite to friend
+        if group_name not in self.groups:
+            print("Error: group [{}] does not exist.".format(group_name))
+            return
+        if self.username != self.groups[group_name]["leader"]:
+            print("Error: only group leader can invite friends to the group.")
+            return
+        if friend_username not in self.friends:
+            print("Error: friend [{}] does not exist.".format(friend_username))
+            return
+        # Send invite to friend
+        friend_host, friend_port = self.friends[friend_username]["address"]
+        res = send_udp("invite to group", self.host, self.port, friend_host, friend_port, content="{} {}".format(self.username, group_name),name=self.username)
+        retry_counter = 1
+        while not res:
+            print(f"Error: cannot send invite to group request for {group_name}. Retry in {2**retry_counter} sec")
+            time.sleep(5)
+            res = send_udp("invite to group", self.host, self.port, friend_host, friend_port, content="{} {}".format(self.username, group_name),name=self.username)
+            retry_counter += 1
+            if retry_counter > 5:
+                return False
+        if res["status"] == 'success':
+            print("Invite to group {} is approved by {}.".format(group_name, friend_username))
+            self.groups[group_name]["members"].append((friend_username, (friend_host, friend_port)))
+        else:
+            print("Invite to group request to {} is denied".format(group_name))
+            return False
+        return True
+    def remove_member(self, group_name: str, friend_username: str):
+        def find_member_index(group_name, friend_username):
+            for i, member in enumerate(self.groups[group_name]["members"]):
+                if member[0] == friend_username:
+                    return i
+            return -1
+        self.update_group_info()
+        if self.username != self.groups[group_name]["leader"]:
+            print("Error: only group leader can remove members.")
+            return
+        if friend_username not in self.friends:
+            print("Error: friend [{}] does not exist.".format(friend_username))
+            return
+        if (friend_username, self.friends[friend_username]["address"]) not in self.groups[group_name]["members"]:
+            print("Error: friend [{}] is not in group [{}].".format(friend_username, group_name))
+            return
+        # Send remove notice to friend
+        friend_host, friend_port = self.friends[friend_username]["address"]
+        res = send_udp("remove from group", self.host, self.port, friend_host, friend_port, content="{} {}".format(self.username, group_name),name=self.username)
+        idx = find_member_index(group_name, friend_username)
+        if idx != -1:
+            self.groups[group_name]["members"].pop(idx)
+        else:
+            print("Error: friend [{}] is not in group [{}].".format(friend_username, group_name))
+            return
+    
+    def leave_group(self, group_name: str):
+        ''' Leave a group '''
+        if group_name not in self.groups:
+            print("Error: group [{}] does not exist.".format(group_name))
+            return
+        if self.username == self.groups[group_name]["leader"]:
+            print("Error: group leader cannot leave the group.")
+            return
+        # Send leave notice to group leader
+        group_host, group_port = self.groups[group_name]["address"]
+        res = send_udp("leave group", self.host, self.port, group_host, group_port, content="{} {}".format(self.username, group_name),name=self.username)
+        retry_counter = 1
+        while not res:
+            print(f"Error: cannot send leave group request for {group_name}. Retry in 5 sec")
+            time.sleep(5)
+            res = send_udp("leave group", self.host, self.port, group_host, group_port, content="{} {}".format(self.username, group_name),name=self.username)
+            retry_counter += 1
+            if retry_counter > 5:
+                return False
+        if res["status"] == 'success':
+            print("Leave group {} successfully.".format(group_name))
+            self.groups.pop(group_name)
+        else:
+            print("Error: leave group {} unsuccessful because leader didn't receive it.".format(group_name))
+            return False
+        return True
+    # broadcast message to all members in the group
+    def broadcast(self, group_name: str, message: str, sender_name = None):
+        self.update_group_info()
+        if group_name not in self.groups:
+            print("Error: group [{}] does not exist.".format(group_name))
+            return
+        if self.username == self.groups[group_name]["leader"]:
+            ## send udp messages to all members in the group
+            if sender_name is None:
+                sender_name = self.username
+            for member in self.groups[group_name]["members"]:
+                mname, maddr = member
+                try:
+                    mhost, mport = maddr
+                except:
+                    mhost, mport = maddr.split(":")
+                res = send_udp("broadcast", self.host, self.port, mhost, mport, content="{} {}".format(sender_name, message),name=group_name)
+                retry_counter = 1
+                while not res:
+                    print(f"Error: cannot send broadcast message to {mname}. Retry in 5 sec")
+                    time.sleep(5)
+                    res = send_udp("broadcast", self.host, self.port, mhost, mport, content="{} {}".format(sender_name, message),name=group_name)
+                    retry_counter += 1
+                    if retry_counter > 3:
+                        print(f"Cannot deliver message to {mname}. Continue...")
+                        break
+                if res["status"] == 'success':
+                    continue
+                else:
+                    print("Error: Deliver message to {} unsuccessful... Continue".format(mname))
+                    return False
+        else:
+            ## send udp message to group leader to broadcast
+            group_host, group_port = self.groups[group_name]["address"]
+            res = send_udp("broadcast_request", self.host, self.port, group_host, group_port, content="{} {}".format(self.username, message),name=group_name)
+            retry_counter = 1
+            while not res:
+                print(f"Error: cannot send broadcast request for {group_name}. Retry in 5 sec")
+                time.sleep(5)
+                res = send_udp("broadcast_request", self.host, self.port, group_host, group_port, content="{} {}".format(self.username, message),name=group_name)
+                retry_counter += 1
+                if retry_counter > 5:
+                    print(f"Cannot deliver message to {group_name}. Please retry...")
+                    return False
+            if res["status"] == 'success':
+                #print("Broadcast message to group {} successfully.".format(group_name))
+                return True
+            else:
+                print("Error: broadcast message to group {} unsuccessful because leader didn't receive it.".format(group_name))
+                return False
+        return True
+    
+    def update_group_info(self):
+        for group, group_info in self.groups.items():
+            if self.username == group_info["leader"]:
+                for i, member in enumerate(group_info["members"]):
+                    if member[0] not in self.friends:
+                        group_info["members"].remove(member)
+                    else:
+                        # look up the most updated address
+                        group_info["members"][i] = (member[0], self.friends[member[0]]["address"])
+                    
+
+
+### Posting ###
     def upload_post(self, fpath: str):
         ''' Upload a post from local space, create identifier for it and broadcast to friends '''
         # Move post file to Posts folder, generate unique identifier for it
