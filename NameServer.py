@@ -238,7 +238,7 @@ class NameServer:
                     res = self.send_udp('add friend', to_host, to_port, content)
                 else:
                     raise ValueError("Unrecognized request")
-            except ValueError:
+            except (ValueError, KeyError):
                 res = {'status': 'error'}
             # Send response
             res = json.dumps(res).encode()

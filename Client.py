@@ -928,16 +928,8 @@ class P2PClient:
             fpath = self.posts[post_id]
             with open(fpath, 'r') as f:
                 text = f.read()
-        # send content via TCP provided
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            try:
-                s.connect((to_host, to_port))
-                message = {"type": "post", "username": self.username, "post_id": post_id, "content": text}
-                message, length = self._process_response(message)
-                s.sendall(length + message)
-            except:
-                # if error occurs, ignore it
-                pass
+        # send content via UDP
+        send_udp('post', self.host, self.port, to_host, to_port, text, self.username)
 
     def get_post(self, friend_username: str, post_id: str):
         if friend_username not in self.friends:
@@ -945,25 +937,8 @@ class P2PClient:
             return
         friend_info = self.friends[friend_username]
         friend_host, friend_port = friend_info["address"]
-        # request to get the post from the friend with UDP, receive content with TCP
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.bind((self.host, 0))
-            s.settimeout(5.0)
-            s.listen()
-            port = s.getsockname()[1]
-            send_udp('get post', self.host, port, friend_host, friend_port, str(post_id), self.username)
-            try:
-                conn, _ = s.accept()
-            except socket.timeout:
-                print("Error: failed to get post [{}] from '{}'.".format(post_id, friend_username))
-                return
-            data = receive_response(conn)
-            conn.close()
-            if not data:
-                print("Error: failed to get post [{}] from '{}'.".format(post_id, friend_username))
-            else:
-                print("{} posted:".format(friend_username))
-                print(data["content"])
+        # request to get the post from the friend with UDP
+        send_udp('get post', self.host, self.port, friend_host, friend_port, str(post_id), self.username)
 
     def remove_post(self, post_id):
         if post_id not in self.posts:
