@@ -76,7 +76,7 @@ def receive_response(conn):
 
 
 # Send UDP
-def send_udp(topic, from_host, from_port, to_host, to_port, content=None, name = None):
+def send_udp(topic, from_host, from_port, to_host, to_port, content=None, name = None, recv=True):
     udp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     udp_sock.settimeout(10)
     message = {
@@ -92,18 +92,19 @@ def send_udp(topic, from_host, from_port, to_host, to_port, content=None, name =
     udp_sock.sendto(message, (to_host, to_port))
     # wait for response
     #retry_count = 1
-    try:
-        response, _ = udp_sock.recvfrom(MSG_SIZE)
-    except socket.timeout:
-        return None
+    if recv:
+        try:
+            response, _ = udp_sock.recvfrom(MSG_SIZE)
+        except socket.timeout:
+            return None
 
-    response = json.loads(response.decode())
-    if response['status'] == 'success':
-        return response
-    else:
-        res = {'status': 'error'}
-    udp_sock.close()
-    return res
+        response = json.loads(response.decode())
+        if response['status'] == 'success':
+            return response
+        else:
+            res = {'status': 'error'}
+        udp_sock.close()
+        return res
 
 
 # Client class
@@ -271,6 +272,8 @@ class P2PClient:
         response = json.loads(data)
         if response:
             # print("Successfully lookup {}".format(username))
+            if response["status"] == "error":
+                return None
             if isinstance(response["address"], str):
                     host, port = response["address"].split()
                     port = int(port)
@@ -479,6 +482,9 @@ class P2PClient:
         # Implement sending friend request to a peer
         if friend_username in self.friends:
             print(f"{friend_username} is already your friend.")
+            return
+        if friend_username == self.username:
+            print("You cannot add yourself as friend.")
             return
         friend_info = self.lookup(friend_username)
         if friend_info is None:
@@ -923,16 +929,17 @@ class P2PClient:
             with open(fpath, 'r') as f:
                 text = f.read()
         # send content via UDP
-        send_udp('post', self.host, self.port, to_host, to_port, text, self.username)
+        send_udp('post', self.host, self.port, to_host, to_port, text, self.username, recv=False)
 
     def get_post(self, friend_username: str, post_id: str):
         if friend_username not in self.friends:
             print("Error: cannot get post from non-friend '{}'.".format(friend_username))
             return
         friend_info = self.friends[friend_username]
+        print(friend_info)
         friend_host, friend_port = friend_info["address"]
         # request to get the post from the friend with UDP
-        send_udp('get post', self.host, self.port, friend_host, friend_port, str(post_id), self.username)
+        send_udp('get post', self.host, self.port, friend_host, friend_port, str(post_id), self.username, recv=False)
 
     def remove_post(self, post_id):
         if post_id not in self.posts:

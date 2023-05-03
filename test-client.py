@@ -153,9 +153,3 @@ if __name__ == "__main__":
                 print("\t| post get friend_username post_id")
         else:
             print("Invalid command. Please try again.")
-        
-    # conn = p2p_client.connect_to_friend("weike")
-    # while True:
-    #     msg = input("> ")
-    #     p2p_client.send_msg_to_friend("weike", msg)
-    #     p2p_client.handle_client(conn)
