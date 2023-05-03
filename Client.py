@@ -105,8 +105,6 @@ def send_udp(topic, from_host, from_port, to_host, to_port, content=None, name =
         message['senderName'] = name
     message = json.dumps(message).encode()
     udp_sock.sendto(message, (to_host, to_port))
-    # wait for response
-    #retry_count = 1
     if recv:
         try:
             response, _ = udp_sock.recvfrom(MSG_SIZE)
@@ -215,7 +213,6 @@ class P2PClient:
                 retry_counter += 1
                 continue
             if success:
-                # print("Connected to host: {} and port: {}".format(self.host, self.port))
                 break
     
     def update_friend_info(self):
@@ -437,7 +434,7 @@ class P2PClient:
             print(message_content)
             self.udpsock.sendto(json.dumps({'status': 'success'}).encode(), addr)
         elif message["topic"] == "broadcast_request":
-            print("Received broadcast request from {}".format(message["senderName"]))
+            #print("Received broadcast request from {}".format(message["senderName"]))
             group_name = message["senderName"]
             sender_name = message["content"].split()[0]
             message_content = " ".join(message["content"].split()[1:])
@@ -539,29 +536,6 @@ class P2PClient:
             save_friends(self.username, self.friends)
         else:
             print(f"{friend_username} rejected your friend request.")
-        # with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        #     try:
-        #         s.connect((friend_host, friend_port))
-        #         request = {
-        #             'type': 'friend_request',
-        #             'username': self.username,
-        #             'address': (self.host, self.port),
-        #             'timestamp': time.time(),
-        #         }
-        #         message, length = self._process_response(request)
-        #         s.send(length + message)
-        #         response = receive_response(s)
-        #         response = json.loads(response)
-        #         if not response:
-        #             return
-        #         if response["status"] == "success":
-        #             print(f"{friend_username} accepted your friend request.")
-        #             self.friends[friend_username] = {'address': (friend_host, friend_port), 'status': 'online', 'last_update': time.time()}
-        #             save_friends(self.username, self.friends)
-        #         else:
-        #             print(f"{friend_username} rejected your friend request.")
-        #     except Exception as e:
-        #         print(f"Error sending friend request: {str(e)}")
 
     def disconnect(self):
         # Implement disconnecting and updating the name server and friends
@@ -654,7 +628,6 @@ class P2PClient:
             s.bind((self.host, self.port))
             s.listen()
             port = s.getsockname()[1]
-            #print("Listening on port " + str(port))
             self.port = port
             s.settimeout(10)
             while True:
@@ -673,13 +646,10 @@ class P2PClient:
                             flag = True
                             break
                         msg = input("> ")
-                        #message = {"type":"message", "username":self.username, "message":msg}
-                        #msg, length = self._process_response(message)
                         if msg.split()[0] == "exit" or msg.split()[0] == "break":
                             flag = True
                             break
                         self.send_msg_to_friend(friend_username, msg)
-                        #conn.send(length + msg)
                     if flag:
                         break
 
@@ -896,7 +866,7 @@ class P2PClient:
             ## send udp message to group leader to broadcast
             group_host, group_port = self.groups[group_name]["address"]
             res = send_udp("broadcast_request", self.host, self.port, group_host, group_port, content="{} {}".format(self.username, message),name=group_name)
-            print(f"Sent broadcast request to {group_host}:{group_port}")
+            #print(f"Sent broadcast request to {group_host}:{group_port}")
             retry_counter = 1
             while not res:
                 print(f"Error: cannot send broadcast request for {group_name}. Retry in 3 sec")
@@ -907,7 +877,6 @@ class P2PClient:
                     print(f"Cannot deliver message to {group_name}. Please retry...")
                     return False
             if res["status"] == 'success':
-                #print("Broadcast message to group {} successfully.".format(group_name))
                 return True
             else:
                 print("Error: broadcast message to group {} unsuccessful because leader didn't receive it.".format(group_name))
