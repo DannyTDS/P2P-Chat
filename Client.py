@@ -12,19 +12,7 @@ UPDATE_INTERVAL = 60
 ACK_TIMEOUT = 5
 MSG_SIZE = 1024
 
-DEFAULT = {
-    # 'weike':{
-    #     'address': ('student11.cse.nd.edu', 1234),
-    #     'status': 'online',
-    #     'last_update': time.time()
-    # },
-    # "danny":{
-    #     'address': ('student11.cse.nd.edu', 1235),
-    #     'status': 'online',
-    #     'last_update': time.time()
-    # }
-
-}
+DEFAULT = {}
 
 # Helper functions
 def save_chat_history(username, chat_history):
@@ -108,15 +96,6 @@ def send_udp(topic, from_host, from_port, to_host, to_port, content=None, name =
         response, _ = udp_sock.recvfrom(MSG_SIZE)
     except socket.timeout:
         return None
-            # time.sleep(2 ** retry_count)
-            # print("Retry in {} seconds".format(2 ** retry_count))
-            # udp_sock.sendto(message, (to_host, to_port))
-            # print("Attempt to send to {}:{} again".format(to_host, to_port))
-            # retry_count += 1
-            # if retry_count > 5:
-            #     print("No response after 5 attempts. Please try again later.")
-            #     res = {'status': 'error'}
-            #     break
 
     response = json.loads(response.decode())
     if response['status'] == 'success':
@@ -412,11 +391,24 @@ class P2PClient:
             self.groups.pop(group_name)
             self.udpsock.sendto(json.dumps({'status': 'success'}).encode(), addr)
         elif message["topic"] == "leave group":
-            pass
+            sender_name, group_name = message["content"].split()
+            print(f"{sender_name} left group {group_name}")
+            self.groups[group_name]["members"].remove((sender_name, addr))
+            self.udpsock.sendto(json.dumps({'status': 'success'}).encode(), addr)
         elif message["topic"] == "broadcast":
-            pass
+            group_name = message["name"]
+            sender_name = message["content"].split()[0]
+            message_content = " ".join(message["content"].split()[1:])
+            print("Group {}".format(group_name))
+            print(f"{sender_name} broadcasted:")
+            print(message_content)
+            self.udpsock.sendto(json.dumps({'status': 'success'}).encode(), addr)
         elif message["topic"] == "broadcast_request":
-            pass
+            group_name = message["name"]
+            sender_name = message["content"].split()[0]
+            message_content = " ".join(message["content"].split()[1:])
+            self.broadcast(group_name, message_content, sender_name)
+            self.udpsock.sendto(json.dumps({'status': 'success'}).encode(), addr)
         elif message["topic"] == 'new post':
             print("There is a new post from {}!".format(message["senderName"]))
         elif message["topic"] == 'get post':
@@ -808,21 +800,23 @@ class P2PClient:
             return False
         return True
     # broadcast message to all members in the group
-    def broadcast(self, group_name: str, message: str):
+    def broadcast(self, group_name: str, message: str, sender_name = None):
         if group_name not in self.groups:
             print("Error: group [{}] does not exist.".format(group_name))
             return
         if self.username == self.groups[group_name]["leader"]:
             ## send udp messages to all members in the group
+            if sender_name is None:
+                sender_name = self.username
             for member in self.groups[group_name]["members"]:
                 mname, maddr = member
                 mhost, mport = maddr
-                res = send_udp("broadcast", self.host, self.port, mhost, mport, content="{} {}".format(self.username, message),name=self.username)
+                res = send_udp("broadcast", self.host, self.port, mhost, mport, content="{} {}".format(sender_name, message),name=group_name)
                 retry_counter = 1
                 while not res:
                     print(f"Error: cannot send broadcast message to {mname}. Retry in 5 sec")
                     time.sleep(5)
-                    res = send_udp("broadcast", self.host, self.port, mhost, mport, content="{} {}".format(self.username, message),name=self.username)
+                    res = send_udp("broadcast", self.host, self.port, mhost, mport, content="{} {}".format(sender_name, message),name=group_name)
                     retry_counter += 1
                     if retry_counter > 3:
                         print(f"Cannot deliver message to {mname}. Continue...")
@@ -835,12 +829,12 @@ class P2PClient:
         else:
             ## send udp message to group leader to broadcast
             group_host, group_port = self.groups[group_name]["address"]
-            res = send_udp("broadcast_request", self.host, self.port, group_host, group_port, content=message,name=self.username)
+            res = send_udp("broadcast_request", self.host, self.port, group_host, group_port, content="{} {}".format(self.username, message),name=group_name)
             retry_counter = 1
             while not res:
                 print(f"Error: cannot send broadcast request for {group_name}. Retry in 5 sec")
                 time.sleep(5)
-                res = send_udp("broadcast_request", self.host, self.port, group_host, group_port, content=message,name=self.username)
+                res = send_udp("broadcast_request", self.host, self.port, group_host, group_port, content="{} {}".format(self.username, message),name=group_name)
                 retry_counter += 1
                 if retry_counter > 5:
                     print(f"Cannot deliver message to {group_name}. Please retry...")

@@ -100,7 +100,33 @@ if __name__ == "__main__":
             friend_username = command.split()[1]
             #addr = p2p_client.lookup(username)
             p2p_client.send_friend_request(friend_username)
-        # post system
+        ### group chat ###
+        elif command and len(command.split()) >= 2 and command.split()[0] == 'create_group':
+            group_name = command.split()[1]
+            if len(command.split()) > 2:
+                is_public = bool(command.split()[2])
+            else:
+                is_public = True
+            p2p_client.create_group(group_name, is_public)
+        elif command and len(command.split()) >= 2 and command.split()[0] == 'join_group':
+            p2p_client.join_group(command.split()[1])
+        elif command and len(command.split()) >= 2 and command.split()[0] == 'leave_group':
+            p2p_client.leave_group(command.split()[1])
+        elif command and len(command.split()) >= 3 and command.split()[0] == 'invite':
+            group_name = command.split()[1]
+            friend_username = command.split()[2]
+            p2p_client.invite_to_group(group_name, friend_username)
+        elif command and len(command.split()) >= 3 and command.split()[0] == 'remove_member':
+            group_name = command.split()[1]
+            friend_username = command.split()[2]
+            p2p_client.remove_member(group_name, friend_username)
+        elif command and len(command.split()) >= 3 and command.split()[0] == 'broadcast':
+            group_name = command.split()[1]
+            message = " ".join(command.split()[2:]).strip('"')
+            p2p_client.broadcast(group_name, message)
+        
+
+        #### post system ###
         elif command and command.split()[0] == 'post':
             try:
                 args = command.split()[1:]
