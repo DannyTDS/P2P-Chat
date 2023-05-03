@@ -47,7 +47,6 @@ if __name__ == "__main__":
             continue
         if command == "quit" or command == "exit":
             print("Exiting commandline...")
-            p2p_client.go_offline()
             break
         elif command == "online":
             #p2p_client.connect_to_name_server()
