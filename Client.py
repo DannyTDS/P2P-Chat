@@ -52,6 +52,10 @@ def load_friends(username):
     try:
         with open(username + '.json', 'r') as f:
             friends = json.load(f)
+        for friend in friends:
+            if isinstance(friends[friend]["address"], str):
+                host, port = friends[friend]["address"].split()
+                friends[friend]["address"] = (host, int(port))
     except FileNotFoundError:
         friends = DEFAULT
     return friends
@@ -86,7 +90,7 @@ def receive_response(conn):
 # Send UDP
 def send_udp(topic, from_host, from_port, to_host, to_port, content=None, name = None):
     udp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    udp_sock.settimeout(10.0)
+    udp_sock.settimeout(10)
     message = {
             'senderHost': from_host,
             'senderPort': from_port,
@@ -99,23 +103,25 @@ def send_udp(topic, from_host, from_port, to_host, to_port, content=None, name =
     message = json.dumps(message).encode()
     udp_sock.sendto(message, (to_host, to_port))
     # wait for response
+    #retry_count = 1
     try:
         response, _ = udp_sock.recvfrom(MSG_SIZE)
-        retry_count = 1
-        while not response:
-            if retry_count > 5:
-                print("No response. Please try again later.")
-                raise socket.timeout("No response from user")
-            time.sleep(2 ** retry_count)
-            print("Retry in {} seconds".format(2 ** retry_count))
-            response, _ = udp_sock.recvfrom(MSG_SIZE)
-            retry_count += 1
-            
+    except socket.timeout:
+        return None
+            # time.sleep(2 ** retry_count)
+            # print("Retry in {} seconds".format(2 ** retry_count))
+            # udp_sock.sendto(message, (to_host, to_port))
+            # print("Attempt to send to {}:{} again".format(to_host, to_port))
+            # retry_count += 1
+            # if retry_count > 5:
+            #     print("No response after 5 attempts. Please try again later.")
+            #     res = {'status': 'error'}
+            #     break
 
-        response = json.loads(response.decode())
-        if response['status'] == 'success':
-            res = {'status': 'success'}
-    except:
+    response = json.loads(response.decode())
+    if response['status'] == 'success':
+        res = {'status': 'success'}
+    else:
         res = {'status': 'error'}
     udp_sock.close()
     return res
@@ -137,7 +143,7 @@ class P2PClient:
         self.friendconn = False
         self.udpsock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.udpsock.bind((self.host, self.port))
-        self.udpsock.settimeout(2.0)
+        self.udpsock.settimeout(5.0)
         self.chat_history = {}
         self.posts = {}     # {post_id : post_path} mapping
         self.post_cnt = 0   # monotonically increasing identifier for new post
@@ -285,6 +291,10 @@ class P2PClient:
         response = json.loads(data)
         if response:
             # print("Successfully lookup {}".format(username))
+            if isinstance(response["address"], str):
+                    host, port = response["address"].split()
+                    port = int(port)
+                    response["address"] = (host, port)
             if username in self.friends:
                 self.friends[username] = response
             return response # {'address': addr, 'status': status, 'last_update': last_update}
@@ -304,16 +314,22 @@ class P2PClient:
             return False
         addr = self.friends[username]['address']
         self.friendconn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.friendconn.settimeout(5.0)
         retry_counter = 0
         success = False
         # send connection request udp packet
-        to_host, to_port = addr
+        if isinstance(addr, str):
+            to_host, to_port = addr.split()[0], int(addr.split()[1])
+        else:
+            to_host, to_port = addr
         res = send_udp('connect', self.host, self.port, to_host, to_port, "connection request from {}".format(self.username), self.username)
         while not res:
-            print("Error: cannot send connection request to {}".format(username))
-            time.sleep(2**retry_counter)
+            print(f"Error: cannot send connection request to {username} {to_host}:{to_port} retry in {2**retry_counter} sec")
+            time.sleep(1)
             res = send_udp('connect', self.host, self.port, to_host, to_port, "connection request from {}".format(self.username), self.username)
             retry_counter += 1
+            if retry_counter > 10:
+                return False
         if res["status"] == 'success':
             print("Connection request to {} is accepted. Connecting...".format(username))
         else:
@@ -348,7 +364,7 @@ class P2PClient:
             decision = input("Do you accept the request? (yes/no): ")
             if decision.lower() == 'yes':
                 self.udpsock.sendto(json.dumps({'status': 'success'}).encode(), addr)
-                self.start_server()
+                self.start_server(message["senderName"])
                 #return True
             else:
                 self.udpsock.sendto(json.dumps({'status': 'reject'}).encode(), addr)
@@ -374,6 +390,9 @@ class P2PClient:
         elif message["topic"] == 'post':
             print("\n" + message["senderName"] + " posted:")
             print(message["content"] + "\n> ", end="")
+        else:
+            print("Received udp packet with unknown topic")
+            print(message)
         return True
             
 
@@ -486,10 +505,9 @@ class P2PClient:
             message, length = self._process_response(request)
             self.friendconn.send(length + message)
             response = receive_response(self.friendconn)
-            response = json.loads(response)
-            #print("response: ", response, "type: ", type(response))
             if not response:
                 return
+            response = json.loads(response)
             if response["status"] == "success":
                 #print(f"Message sent to {friend_username}.")
                 if friend_username not in self.chat_history:
@@ -518,6 +536,7 @@ class P2PClient:
             conn.sendall(length + message)
             return friend_username
             #print(f"Message sent to {friend_username}.")
+        return "Fault"
 
     def handle_client(self, conn, addr=None):
         # Implement handling client connections and incoming messages
@@ -528,19 +547,13 @@ class P2PClient:
         response = json.loads(data)
         if not isinstance(response, dict) or 'type' not in response:
             return 
-        # if response['type'] == 'friend_request':
-        #     self.handle_friend_request(conn, data)
         elif response['type'] == 'message':
-            # if response["username"] not in self.friends:
-            #     return
-            # else:
-            #     
             friend_username = self.handle_incoming_msg(conn, data)
             return friend_username
         else:
             print("Unknown request type.")
 
-    def start_server(self):
+    def start_server(self,friend_username=None):
         # Implement starting the server to listen for incoming connections
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.bind((self.host, self.port))
