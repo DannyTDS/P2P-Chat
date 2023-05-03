@@ -20,14 +20,17 @@ class Catalog:
     def __init__(self):
         self._catalog = dict()
 
-    def add(self, name, address, status, verbose=True):
+    def add(self, name, address, status, verbose=True, isgroup= False):
         # Add a new user to the catalog or update an existing user's information
         # address is a tuple of (host, port)
         self._catalog[name] = {
             'address': address,
             'status': status,
             'last_update': time.time(),
+            'isgroup': False,
         }
+        if isgroup:
+            self._catalog[name]['isgroup'] = True
         if verbose:
             host, port = address
             print("Registered user {} at {}:{} as {}".format(name, host, port, status))
@@ -46,6 +49,8 @@ class Catalog:
         ts = time.time()
         updated = []
         for name, user in self._catalog.items():
+            if user['isgroup']:
+                continue
             if ts - user['last_update'] > 120.0 and user['status'] == 'online':
                 self._catalog[name]["status"] = 'offline'
                 if verbose:
