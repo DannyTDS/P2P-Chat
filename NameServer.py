@@ -77,8 +77,8 @@ class Checkpoint:
             with open(self.path, 'r') as f:
                 ts = float(f.readline().strip())
                 for line in f.read().splitlines():
-                    name, address, status = line.split()
-                    catalog.add(name, address, status, verbose=False)
+                    name, host, port, status = line.split()
+                    catalog.add(name, (host,port), status, verbose=False)
         except FileNotFoundError:
             ts = 0.0
         return catalog, ts
@@ -233,7 +233,7 @@ class NameServer:
                     res = self.send_udp('add friend', to_host, to_port, content)
                 else:
                     raise ValueError("Unrecognized request")
-            except ValueError:
+            except (ValueError, KeyError):
                 res = {'status': 'error'}
             # Send response
             res = json.dumps(res).encode()
