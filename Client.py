@@ -452,7 +452,7 @@ class P2PClient:
             self.send_post(message["senderName"], message["senderHost"], message["senderPort"], message["content"])
         elif message["topic"] == 'post':
             print("\n" + message["senderName"] + " posted:")
-            print(message["content"] + "\n> ", end="")
+            print(message["content"] + "\n", end="")
         elif message["topic"] == "message":
             print("\n" + message["senderName"] + " sent you a message:")
             print(message["content"] + "\n", end="")
@@ -945,7 +945,6 @@ class P2PClient:
         shutil.move(fpath, new_fpath)
         self.posts[str(self.post_cnt)] = new_fpath
         print("Uploaded post with id [{}].".format(self.post_cnt))
-        print("> ", end="")
         # Broadcast post to friends
         self.update_friend_info()
         for info in self.friends.values():
@@ -975,7 +974,6 @@ class P2PClient:
             print("Error: cannot get post from non-friend '{}'.".format(friend_username))
             return
         friend_info = self.friends[friend_username]
-        print(friend_info)
         friend_host, friend_port = friend_info["address"]
         # request to get the post from the friend with UDP
         send_udp('get post', self.host, self.port, friend_host, friend_port, str(post_id), self.username, recv=False)
