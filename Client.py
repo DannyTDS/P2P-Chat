@@ -99,7 +99,7 @@ def send_udp(topic, from_host, from_port, to_host, to_port, content=None, name =
 
     response = json.loads(response.decode())
     if response['status'] == 'success':
-        res = {'status': 'success'}
+        return response
     else:
         res = {'status': 'error'}
     udp_sock.close()
@@ -720,18 +720,20 @@ class P2PClient:
 
         # Send join request to group leader
         group_host, group_port = response["address"]
-        res = send_udp("join group", self.host, self.port, group_host, group_port, content="{} {}".format(self.username, group_name),name=self.username)
-        while not res:
+        jres = send_udp("join group", self.host, self.port, group_host, group_port, content="{} {}".format(self.username, group_name),name=self.username)
+        while not jres:
             print(f"Error: cannot send join group request for {group_name}. Retry in {2**retry_counter} sec")
             time.sleep(1)
-            res = send_udp("join group", self.host, self.port, group_host, group_port, content="{} {}".format(self.username, group_name),name=self.username)
+            jres = send_udp("join group", self.host, self.port, group_host, group_port, content="{} {}".format(self.username, group_name),name=self.username)
             retry_counter += 1
             if retry_counter > 10:
                 return False
-        if res["status"] == 'success':
+        if jres["status"] == 'success':
             print("Request to join group {} is approved by the group leader.".format(group_name))
-            leader_name = res["leader"]
-            self.groups[group_name] = {"is_public": True, "members": res["members"], "leader": leader_name, "address": (group_host, group_port)}
+            if "leader" not in jres:
+                print(jres)
+            leader_name = jres["leader"]
+            self.groups[group_name] = {"is_public": True, "members": jres["members"], "leader": leader_name, "address": (group_host, group_port)}
         else:
             print("Error: cannot send join group request to {}".format(group_name))
             return False
@@ -789,7 +791,7 @@ class P2PClient:
         res = send_udp("remove from group", self.host, self.port, friend_host, friend_port, content="{} {}".format(self.username, group_name),name=self.username)
         idx = find_member_index(group_name, friend_username)
         if idx != -1:
-            self.groups[group_name].pop(idx)
+            self.groups[group_name]["members"].pop(idx)
         else:
             print("Error: friend [{}] is not in group [{}].".format(friend_username, group_name))
             return
@@ -832,7 +834,10 @@ class P2PClient:
                 sender_name = self.username
             for member in self.groups[group_name]["members"]:
                 mname, maddr = member
-                mhost, mport = maddr
+                try:
+                    mhost, mport = maddr
+                except:
+                    mhost, mport = maddr.split(":")
                 res = send_udp("broadcast", self.host, self.port, mhost, mport, content="{} {}".format(sender_name, message),name=group_name)
                 retry_counter = 1
                 while not res:
@@ -870,14 +875,14 @@ class P2PClient:
         return True
     
     def update_group_info(self):
-        for group, group_info in self.groups.items:
+        for group, group_info in self.groups.items():
             if self.username == group_info["leader"]:
-                for member in group_info["members"]:
+                for i, member in enumerate(group_info["members"]):
                     if member[0] not in self.friends:
                         group_info["members"].remove(member)
                     else:
                         # look up the most updated address
-                        group_info["members"][member[0]] = (member[0], self.friends[member[0]]["address"])
+                        group_info["members"][i] = (member[0], self.friends[member[0]]["address"])
                     
 
 
