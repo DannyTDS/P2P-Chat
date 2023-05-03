@@ -54,6 +54,14 @@ This should bring you to a CLI waiting for user input. We supply the following c
 | connect *username* | start private chat with another user |
 | history *username* | display the chat history with another user |
 | list | list information of all existing friends |
+| message *username* *msg* | send a udp message to a friend |
+| create_group *groupname* | create a public group of groupname |
+| create_group *groupname* 0 | create a private group of groupname (0 for private, 1 for public - default) |
+| join_group *groupname* | send a join request to group of name groupname |
+| leave_group *groupname* | leave a group |
+| invite *groupname* *username*| leader invite a friend to a group|
+| remove_member *groupname* *username*| leader removes a member from a group|
+| broadcast *groupname* *msg* | broadcast message to group| 
 | post upload *filepath* | upload a post file |
 | post remove *id* | remove a post file by id |
 | post list | list all owned posts |
