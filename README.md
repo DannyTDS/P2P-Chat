@@ -53,6 +53,7 @@ This should bring you to a CLI waiting for user input. We supply the following c
 | offline   | go offline        |
 | exit      | exit the CLI |
 | lookup *username* | lookup and display information of a user
+| update | update the stored information of friends
 | add *username* | request to add another user as friend |
 | connect *username* | start private chat with another user |
 | history *username* | display the chat history with another user |
