@@ -687,8 +687,7 @@ class P2PClient:
 # 3. The leader can invite friends to join the group, remove members from the group, and manage join requests
 # 4. The leader should keep track of members and their addresses
 # 5. If a group member wants to leave a group, it should send a message to the leader
-# 6. If the leader leaves the group, a new leader should be elected (TODO)
-# 7. To send a message in the group chat, the client should send the message to the leader, and the leader
+# 6. To send a message in the group chat, the client should send the message to the leader, and the leader
 #   should broadcast the message to all members
     
     def create_group(self, group_name: str, is_public: bool):
@@ -735,6 +734,10 @@ class P2PClient:
             time.sleep(2**retry_counter)
             self._send_response_to_server(message, length)
             data = receive_response(self.nameserverconn)
+            retry_counter += 1
+            if retry_counter > 3:
+                print("Error: cannot lookup")
+                return None
         response = json.loads(data) # response is a dict{'address': address,'status': status,'last_update': time.time(),'isgroup': True}
         if response:
             if isinstance(response["address"], str):
@@ -748,12 +751,13 @@ class P2PClient:
         # Send join request to group leader
         group_host, group_port = response["address"]
         jres = send_udp("join group", self.host, self.port, group_host, group_port, content="{} {}".format(self.username, group_name),name=self.username)
+        retry_counter = 0
         while not jres:
             print(f"Error: cannot send join group request for {group_name}. Retry in {2**retry_counter} sec")
-            time.sleep(1)
+            time.sleep(2**retry_counter)
             jres = send_udp("join group", self.host, self.port, group_host, group_port, content="{} {}".format(self.username, group_name),name=self.username)
             retry_counter += 1
-            if retry_counter > 10:
+            if retry_counter > 3:
                 return False
         if jres["status"] == 'success':
             print("Request to join group {} is approved by the group leader.".format(group_name))
@@ -872,18 +876,18 @@ class P2PClient:
                 res = send_udp("broadcast", self.host, self.port, mhost, mport, content="{} {}".format(sender_name, message),name=group_name)
                 retry_counter = 1
                 while not res:
-                    print(f"Error: cannot send broadcast message to {mname}. Retry in 5 sec")
-                    time.sleep(5)
+                    print(f"Error: cannot send broadcast message to {mname}. Retry in 3 sec")
+                    time.sleep(3)
                     res = send_udp("broadcast", self.host, self.port, mhost, mport, content="{} {}".format(sender_name, message),name=group_name)
                     retry_counter += 1
                     if retry_counter > 3:
                         print(f"Cannot deliver message to {mname}. Continue...")
-                        return False
-                if res["status"] == 'success':
+                        break
+                if res and res["status"] == 'success':
                     continue
                 else:
                     print("Error: Deliver message to {} unsuccessful... Continue".format(mname))
-                    return False
+                    continue
         else:
             ## send udp message to group leader to broadcast
             group_host, group_port = self.groups[group_name]["address"]
@@ -891,8 +895,8 @@ class P2PClient:
             print(f"Sent broadcast request to {group_host}:{group_port}")
             retry_counter = 1
             while not res:
-                print(f"Error: cannot send broadcast request for {group_name}. Retry in 5 sec")
-                time.sleep(5)
+                print(f"Error: cannot send broadcast request for {group_name}. Retry in 3 sec")
+                time.sleep(3)
                 res = send_udp("broadcast_request", self.host, self.port, group_host, group_port, content="{} {}".format(self.username, message),name=group_name)
                 retry_counter += 1
                 if retry_counter > 5:
@@ -915,7 +919,10 @@ class P2PClient:
                     else:
                         # look up the most updated address
                         group_info["members"][i] = (member[0], self.friends[member[0]]["address"])
-                    
+
+    # For Test-perf only
+    def set_group(self, groups):
+        self.groups = groups       
 
 
 ### Posting ###
